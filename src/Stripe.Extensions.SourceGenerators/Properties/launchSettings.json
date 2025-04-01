@@ -1,9 +1,0 @@
-﻿{
-  "$schema": "http://json.schemastore.org/launchsettings.json",
-  "profiles": {
-    "Stripe.Extensions.SourceGenerators": {
-      "commandName": "DebugRoslynComponent",
-      "targetProject": "../../samples/Harness/Harness.csproj"
-    }
-  }
-}
