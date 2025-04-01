@@ -11,25 +11,15 @@
     <Description>Stripe .NET extension library to help with DI registration. </Description>
     <PackageId>Stripe.Extensions.DependencyInjection</PackageId>
     <PackageTags>stripe;dotnet;dependencyinjection;payments;</PackageTags>
-    <PackageReadmeFile>README.md</PackageReadmeFile>
-    <PackageIcon>stripe_logo_blurple.png</PackageIcon>
   </PropertyGroup>
-  
-  <ItemGroup>
-    <None Include="..\..\README.md" Visible="false" Pack="true" PackagePath="\" />
-    <None Include="..\..\stripe_logo_blurple.png"  Visible="false" Pack="true" PackagePath="\" />
-  </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Extensions.ObjectPool" Version="9.0.0" />
     <PackageReference Include="Stripe.net" Version="47.4.0" />
     <PackageReference Include="Microsoft.Extensions.Http" Version="9.0.0" />
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.0" />
     <PackageReference Include="Microsoft.Extensions.Configuration" Version="9.0.0" />
     <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="9.0.0" />
     <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="9.0.0" />
-    <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="9.0.0" />
-    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.11.2" />
   </ItemGroup>
 
 </Project>

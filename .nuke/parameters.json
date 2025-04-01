@@ -3,5 +3,5 @@
   "Solution": "Stripe.Extensions.sln",
   "MinVerTagPrefix": "v",
   "MinVerPreReleaseIdentifiers": "preview.1",
-  "MinVerIgnoreHeight": "true"
+  "MinVerIgnoreHeight": "false"
 }

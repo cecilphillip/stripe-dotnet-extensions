@@ -13,7 +13,7 @@ namespace Stripe.Extensions.AspNetCore.Tests;
 
 public class WebhookHandlerTests
 {
-    private const string _secret = "secret_key";
+    private const string Secret = "secret_key";
     private readonly List<Event> _invocations = [];
 
     private WebApplication BuildWebApplication(Action<StripeOptions>? configureOptions = null, ILogger? logger = null)
@@ -42,8 +42,8 @@ public class WebhookHandlerTests
         
         var app = BuildWebApplication(configureOptions: opts =>
         {
-            opts.ApiKey = _secret;
-            opts.WebhookSecret = _secret;
+            opts.ApiKey = Secret;
+            opts.WebhookSecret = Secret;
         }, logger);
 
         await app.StartAsync();
@@ -66,7 +66,7 @@ public class WebhookHandlerTests
 
         var app = BuildWebApplication(configureOptions: opts =>
         {
-            opts.ApiKey = _secret;
+            opts.ApiKey = Secret;
             opts.WebhookSecret = null!;
         }, logger);
         
@@ -90,8 +90,8 @@ public class WebhookHandlerTests
 
         var app = BuildWebApplication(configureOptions: opts =>
         {
-            opts.ApiKey = _secret;
-            opts.WebhookSecret = _secret;
+            opts.ApiKey = Secret;
+            opts.WebhookSecret = Secret;
         }, logger);
         
         await app.StartAsync();
@@ -114,8 +114,8 @@ public class WebhookHandlerTests
 
         var app = BuildWebApplication(configureOptions: opts =>
         {
-            opts.ApiKey = _secret;
-            opts.WebhookSecret = _secret;
+            opts.ApiKey = Secret;
+            opts.WebhookSecret = Secret;
         }, logger);
 
         await app.StartAsync();
@@ -137,8 +137,8 @@ public class WebhookHandlerTests
 
         var app = BuildWebApplication(configureOptions: opts =>
         {
-            opts.ApiKey = _secret;
-            opts.WebhookSecret = _secret;
+            opts.ApiKey = Secret;
+            opts.WebhookSecret = Secret;
         }, logger);
 
         await app.StartAsync();
@@ -157,8 +157,8 @@ public class WebhookHandlerTests
     {
         var app = BuildWebApplication(configureOptions: opts =>
         {
-            opts.ApiKey = _secret;
-            opts.WebhookSecret = _secret;
+            opts.ApiKey = Secret;
+            opts.WebhookSecret = Secret;
         });
         
         await app.StartAsync();
@@ -175,8 +175,8 @@ public class WebhookHandlerTests
         var app =
             BuildWebApplication(configureOptions: options =>
             {
-                options.ApiKey = _secret;
-                options.WebhookSecret = _secret;
+                options.ApiKey = Secret;
+                options.WebhookSecret = Secret;
                 options.ThrowOnWebhookApiVersionMismatch = false;
             });
 
@@ -193,8 +193,8 @@ public class WebhookHandlerTests
     {
         var app = BuildWebApplication(configureOptions: opts =>
         {
-            opts.ApiKey = _secret;
-            opts.WebhookSecret = _secret;
+            opts.ApiKey = Secret;
+            opts.WebhookSecret = Secret;
         });
 
         await app.StartAsync();
@@ -275,7 +275,7 @@ public class WebhookHandlerTests
                       "}";
 
         var eventTimestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString();
-        var signature = $"t={eventTimestamp},v1={ComputeSignature(_secret, eventTimestamp, payload)}";
+        var signature = $"t={eventTimestamp},v1={ComputeSignature(Secret, eventTimestamp, payload)}";
 
         return new StringContent(payload)
         {

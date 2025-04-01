@@ -11,15 +11,8 @@
     <Description>Stripe .NET extension for ASP.NET Core</Description>
     <PackageId>Stripe.Extensions.AspNetCore</PackageId>
     <PackageTags>stripe;dotnet;aspnetcore;webhooks;payments;dependencyinjection;</PackageTags>
-    <PackageReadmeFile>README.md</PackageReadmeFile>
-    <PackageIcon>stripe_logo_blurple.png</PackageIcon>
   </PropertyGroup>
 
-  <ItemGroup>
-    <None Include="..\..\README.md" Visible="false" Pack="true" PackagePath="\" />
-    <None Include="..\..\stripe_logo_blurple.png"  Visible="false" Pack="true" PackagePath="\" />
-  </ItemGroup>
-  
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
