@@ -1,6 +1,6 @@
 # Stripe .NET Extensions
 
-![logo](https://cdn.brandfolder.io/KGT2DTA4/at/bskj2q8srfqx3cvfqvhk73pc/Stripe_wordmark_-_blurple_small.png?width=437&height=208)
+![logo](stripe_logo_blurple.png)
 
 ![](https://github.com/cecilphillip-stripe/stripe-dotnet-extensions/actions/workflows/build.yml/badge.svg)
 
