@@ -95,7 +95,7 @@ class Build : NukeBuild, IPublish
                 .SetVerbosity(MinVerVerbosity.Info)
                 .SetProcessEnvironmentVariable("MinVerDefaultPreReleaseIdentifiers", MinVerPreReleaseIdentifiers)
                 .SetProcessEnvironmentVariable("MinVerIgnoreHeight", MinVerIgnoreHeight )
-                .DisableProcessLogOutput()
+                .DisableProcessOutputLogging()
             )
             .Result;
 

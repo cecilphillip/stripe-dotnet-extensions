@@ -12,10 +12,11 @@ public class ServiceCollectionExtensionsTest
     {
         var collection = new ServiceCollection();
 
+        const string fakeKey = "MyKey";
         collection.AddSingleton<IConfiguration>(new ConfigurationBuilder()
             .AddInMemoryCollection(new Dictionary<string, string?>()
             {
-                ["Stripe:Default:ApiKey"] = "MyKey"
+                ["Stripe:Default:ApiKey"] = fakeKey
             }).Build());
 
         collection.AddStripe();
@@ -26,7 +27,7 @@ public class ServiceCollectionExtensionsTest
         Assert.NotNull(opts);
         var defaultOpts = opts.Get("Default");
 
-        Assert.Equal("MyKey", defaultOpts.ApiKey);
+        Assert.Equal(fakeKey, defaultOpts.ApiKey);
         Assert.Equal(defaultOpts.SecretKey, defaultOpts.ApiKey);
     }
 
@@ -49,8 +50,8 @@ public class ServiceCollectionExtensionsTest
 
         var keyedStripeClient =
             provider.GetKeyedService<StripeClient>(StripeOptions.DefaultClientConfigurationSectionName);
+        
         Assert.NotNull(keyedStripeClient);
-
         Assert.StrictEqual(stripedClient, keyedStripeClient);
     }
 
