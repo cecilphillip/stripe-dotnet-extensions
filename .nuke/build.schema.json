@@ -118,6 +118,9 @@
           "type": "boolean",
           "description": "Ignore unreachable sources during Restore"
         },
+        "MinVerIgnoreHeight": {
+          "type": "string"
+        },
         "MinVerPreReleaseIdentifiers": {
           "type": "string"
         },
