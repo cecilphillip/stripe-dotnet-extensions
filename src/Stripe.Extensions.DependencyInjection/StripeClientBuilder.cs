@@ -32,6 +32,7 @@ internal sealed class StripeClientBuilder(IHttpClientBuilder httpClientBuilder) 
             maxNetworkRetries: stripeOptions.MaxNetworkRetries,
             appInfo: stripeOptions.AppInfo,
             enableTelemetry: stripeOptions.EnableTelemetry);
+        
 
         stripeOptions.HttpClient = systemHttpClient;
         return new StripeClient(stripeOptions);
