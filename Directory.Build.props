@@ -35,7 +35,7 @@
     
     <ItemGroup>
         <None Include="$(MSBuildThisFileDirectory)\README.md" Visible="false" Pack="true" PackagePath="\" />
-        <None Include="$(MSBuildThisFileDirectory)\opstripe_logo_blurple.png"  Visible="false" Pack="true" PackagePath="\" />
+        <None Include="$(MSBuildThisFileDirectory)\stripe_logo_blurple.png"  Visible="false" Pack="true" PackagePath="\" />
     </ItemGroup>
     
     <PropertyGroup Condition="'$(GITHUB_ACTIONS)' == 'true'">
