@@ -1,6 +1,5 @@
 using Stripe;
 using Stripe.Extensions.AspNetCore;
-using Stripe.Extensions.DependencyInjection;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -20,11 +19,13 @@ app.MapDefaultControllerRoute();
 app.MapStripeWebhookHandler<MyWebhookHandler>();
 app.Run();
 
-public class MyWebhookHandler(StripeClient stripeClient, StripeWebhookContext context, ILogger<MyWebhookHandler> logger)
-    : StripeWebhookHandler(context, logger)
+public class MyWebhookHandler(StripeClient stripeClient, StripeWebhookContext context)
+    : StripeWebhookHandler<MyWebhookHandler>(context)
 {
     public override async Task OnCustomerCreatedAsync(Event e)
     {
+        Logger.LogInformation($"Running {nameof(OnCustomerCreatedAsync)}");
+        
         var customer = (e.Data.Object as Customer)!;
         await stripeClient.V1.Customers.UpdateAsync(customer.Id, new CustomerUpdateOptions()
         {

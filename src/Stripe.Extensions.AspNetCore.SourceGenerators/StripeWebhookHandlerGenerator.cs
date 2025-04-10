@@ -20,7 +20,7 @@ using Stripe;
 
 namespace Stripe.Extensions.AspNetCore;
 
-public abstract partial class StripeWebhookHandler
+public abstract partial class StripeWebhookHandler<T>
 {{
  
     // generated code

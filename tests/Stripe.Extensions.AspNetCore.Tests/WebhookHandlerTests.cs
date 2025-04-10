@@ -200,20 +200,14 @@ public class WebhookHandlerTests
         await app.StartAsync();
         using var httpClient = app.GetTestClient();
         await httpClient.PostAsync("/stripe/webhook", BuildPayload(apiVersion: "01-02-1234"));
-
-
-        // Assert.Contains(testSink.LogEntries, e =>
-        //     e.LogLevel == LogLevel.Warning &&
-        //     e.Exception?.Message.Contains("API version") == true &&
-        //     e.Message == "Exception occured while parsing the Stripe WebHook event payload.");
     }
 
-    private class MockHandler : StripeWebhookHandler
+    private class MockHandler : StripeWebhookHandler<MockHandler>
     {
         private readonly List<Event> _invocations;
 
-        public MockHandler(List<Event> invocations, StripeWebhookContext stripeWebhookContext, ILogger<MockHandler> logger) : base(
-            stripeWebhookContext, logger)
+        public MockHandler(List<Event> invocations, StripeWebhookContext stripeWebhookContext) : base(
+            stripeWebhookContext)
         {
             _invocations = invocations;
         }

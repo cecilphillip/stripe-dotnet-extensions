@@ -4,9 +4,10 @@ using Microsoft.Extensions.Logging;
 
 namespace Stripe.Extensions.AspNetCore;
 
-public abstract partial class StripeWebhookHandler(StripeWebhookContext context, ILogger logger)
+public abstract partial class StripeWebhookHandler<T>(StripeWebhookContext context)
 {
     protected StripeWebhookContext Context { get; } = context;
+    protected ILogger<T> Logger => context.LoggerFactory.CreateLogger<T>();
     
     public async Task<IResult> ExecuteAsync()
     {
@@ -24,7 +25,7 @@ public abstract partial class StripeWebhookHandler(StripeWebhookContext context,
                     "You can set it using Stripe:WebhookSecret configuration section or " +
                     "by passing the value to .AddStripe(o => o.WebhookSecret = \"your_secret\") call");
 
-                logger.WebhookSecretValidationFailed("Webhook Secret Validation Failed!", ex);
+                Logger.WebhookSecretValidationFailed("Webhook Secret Validation Failed!", ex);
                 throw ex;
             }
             
@@ -41,7 +42,7 @@ public abstract partial class StripeWebhookHandler(StripeWebhookContext context,
         }
         catch (Exception e)
         {
-            logger.EventParsingError(e);
+            Logger.EventParsingError(e);
             response.StatusCode = 400;
             return Results.BadRequest();
         }
@@ -53,7 +54,7 @@ public abstract partial class StripeWebhookHandler(StripeWebhookContext context,
         }
         catch (Exception e)
         {
-            logger.ExecutionError(stripeEvent.Type, e);
+            Logger.ExecutionError(stripeEvent.Type, e);
             response.StatusCode = 500;
             return Results.BadRequest();
         }
@@ -62,13 +63,13 @@ public abstract partial class StripeWebhookHandler(StripeWebhookContext context,
     private Task UnhandledEventAsync(Event e,
         [CallerMemberName] string? handlerMethod = null)
     {
-        logger.UnhandledEvent(e.Type, handlerMethod ?? "<unknown>", null);
+        Logger.UnhandledEvent(e.Type, handlerMethod ?? "<unknown>", null);
         return Task.CompletedTask;
     }
 
     protected virtual Task UnknownEventAsync(Event e)
     {
-        logger.UnknownEvent(e.Type, null);
+        Logger.UnknownEvent(e.Type, null);
         return Task.CompletedTask;
     }
 }

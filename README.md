@@ -163,7 +163,7 @@ app.MapStripeWebhookHandler<MyWebhookHandler>();
 The `StripeWebhookHandler` also supports constructor dependency injection, so Stripe or other services can be injected by defining them as constructor parameters.
 
 ```csharp
-public class MyWebhookHandler: StripeWebhookHandler
+public class MyWebhookHandler: StripeWebhookHandler<MyWebhookHandler>
 {
     private readonly StripeClient _stripeClient;
     public MyWebhookHandler(StripeClient stripeClient)
@@ -191,29 +191,29 @@ For example, here is how a unit-test might be written to test the logic of the h
 [Fact]
 public async Task UpdatesCustomerOnCreation()
 {
-     var serviceMock = new Mock<CustomerService>();
-        var handler = new MyWebhookHandler(serviceMock.Object);
-        // Prepare the event
-        var e = new Event()
+    var serviceMock = new Mock<CustomerService>();
+    var handler = new MyWebhookHandler(serviceMock.Object);
+    // Prepare the event
+    var e = new Event()
+    {
+        Data = new EventData()
         {
-            Data = new EventData()
+            Object = new Customer()
             {
-                Object = new Customer()
-                {
-                    Id = "cus_123"
-                }
+                Id = "cus_123"
             }
-        };
+        }
+    };
 
-        // Invoke the handler
-        await handler.OnCustomerCreatedAsync(e);
+    // Invoke the handler
+    await handler.OnCustomerCreatedAsync(e);
 
-        // Verify that the customer was updated with a new description
-        serviceMock.Verify(s => s.UpdateAsync(
-            "cus_123",
-            It.Is<CustomerUpdateOptions>(o => o.Description == "New customer"),
-            It.IsAny<RequestOptions>(),
-            It.IsAny<CancellationToken>()));
+    // Verify that the customer was updated with a new description
+    serviceMock.Verify(s => s.UpdateAsync(
+        "cus_123",
+        It.Is<CustomerUpdateOptions>(o => o.Description == "New customer"),
+        It.IsAny<RequestOptions>(),
+        It.IsAny<CancellationToken>()));
 }
 ```
 
