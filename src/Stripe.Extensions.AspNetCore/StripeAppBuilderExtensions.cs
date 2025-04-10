@@ -11,13 +11,14 @@ namespace Stripe.Extensions.AspNetCore;
 public static class StripeAppBuilderExtensions
 {
     public static IEndpointRouteBuilder MapStripeWebhookHandler<T>(this IEndpointRouteBuilder endpointRouteBuilder,
-        string namedConfiguration = StripeOptions.DefaultClientConfigurationSectionName)
-        where T : StripeWebhookHandler
+        string pattern = "/stripe/webhook")
+        where T : StripeWebhookHandler<T>
     {
-        if (namedConfiguration == null)
-            throw new ArgumentNullException(nameof(namedConfiguration));
+        if (pattern == null)
+            throw new ArgumentNullException(nameof(pattern));
 
-        return endpointRouteBuilder.MapStripeWebhookHandler<T>("/stripe/webhook", namedConfiguration);
+        return endpointRouteBuilder.MapStripeWebhookHandler<T>(pattern,
+            StripeOptions.DefaultClientConfigurationSectionName);
     }
 
     public static IEndpointRouteBuilder MapStripeWebhookHandler<T>(this IEndpointRouteBuilder endpointRouteBuilder,
