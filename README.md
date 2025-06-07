@@ -18,9 +18,10 @@ dotnet add package Stripe.Extensions.DependencyInjection
 dotnet add package Stripe.Extensions.AspNetCore
 ```
 
-## DependencyInjection registration
+###Dependency Injection & Configuration
 
 Using `Stripe.Extensions.DependencyInjection` you can register named and unnamed versions of `StripeClient` using `AddStripe()`.
+The StripClient service is registered as scoped. 
 
 ```csharp
 // Startup-based apps
@@ -33,7 +34,7 @@ public void ConfigureServices(IServiceCollection services)
 builder.Services.AddStripe();
 ```
 
-The `AddStripe()` extension also supports registering named Stripe clients.
+The `AddStripe()` extension also supports registering named StripeClients, which uses keyed DI registrations.
 
 ```csharp
 builder.Services.AddStripe(); // default client
@@ -44,10 +45,10 @@ builder.Services.AddStripe("client2"); // client2
 ### Configuration
 
 The Stripe [API keys](https://docs.stripe.com/keys#obtain-api-keys) need to be configured in your application before calls can be made using the SDK.
-By default, the extension packages will look for a `Stripe` configuration section when calling `AddStripe()` 
-without a client name. For named clients, the configuration section should match the client name.
+The extension packages will look for a `Stripe` configuration section when calling `AddStripe()`. Configuring multiple clients is also supported by
+using the client name as the key in the configuration section. When configuring the default client without a client name, the key should be `Default`.
 
-To configure the default client: 
+To configure the default client when using `AddStripe()`: 
 ```json
 {
   "Stripe": { 
@@ -59,7 +60,7 @@ To configure the default client:
 }
 ```
 
-To configure a client named `client1`:
+To configure a client named `client1` when using `AddStripe("client1")`::
 ```json
 {
   "Stripe": {
@@ -126,17 +127,19 @@ public class HomeController : Controller
 }
 ```
 
-### Webhook handling
+## Webhook handling
 
 The `Stripe.Extensions.AspNetCore` package simplifies Webhook handling by automating the event parsing, signature validation and logging.
 All that's needed is to override the appropriate events of the handler class.
 
-Create a handler class that inherits from [StripeWebhookHandler](./src/Stripe.Extensions.AspNetCore/StripeWebhookHandler.cs), which defines virtual methods for all known webhook events.
+Create a handler class that inherits from [StripeWebhookHandler](./src/Stripe.Extensions.AspNetCore/StripeWebhookHandler.cs), which provides virtual methods for all known webhook events.
 To handle an event override the corresponding `On*Async` method.
 
 ```csharp
-public class MyWebhookHandler: StripeWebhookHandler
+public class MyWebhookHandler: StripeWebhookHandler<MyWebhookHandler>();
 {
+    public MyWebhookHandler(StripeWebhookContext context) : base(context) {}
+    
     public override Task OnCustomerCreatedAsync(Event e)
     {
         // handle customer.create event
@@ -144,6 +147,9 @@ public class MyWebhookHandler: StripeWebhookHandler
     }
 }
 ```
+Each handler has a single constructor that accepts an instance of [StripeWebhookContext](./src/Stripe.Extensions.AspNetCore/StripeWebhookContext.cs), which provides
+access to `StripeClient`, the configured `StripeOptions` and an instance of `ILogger`.
+
 
 The last step is to register the webhook handler with ASP.NET Core routing by calling `MapStripeWebhookHandler`.
 
@@ -165,16 +171,16 @@ The `StripeWebhookHandler` also supports constructor dependency injection, so St
 ```csharp
 public class MyWebhookHandler: StripeWebhookHandler<MyWebhookHandler>
 {
-    private readonly StripeClient _stripeClient;
-    public MyWebhookHandler(StripeClient stripeClient)
+    private readonly IMyService _myService;
+    public MyWebhookHandler(IMyService myService, StripeWebhookContext context) : base(context) {}
     {
-        _stripeClient = stripeClient;
+        _myService = myService;
     }
 
     public override async Task OnCustomerCreatedAsync(Event e)
     {
         Customer customer = (Customer)e.Data.Object;
-        await _stripeClient.V1.Customers.UpdateAsync(customer.Id, new CustomerUpdateOptions()
+        await Context.Client.V1.Customers.UpdateAsync(customer.Id, new CustomerUpdateOptions()
         {
             Description = "New customer"
         });
@@ -219,6 +225,7 @@ public async Task UpdatesCustomerOnCreation()
 
 
 ### Useful links
+- [Stripe.NET](https://github.com/stripe/stripe-dotnet)
 - [Stripe Docs](https://docs.stripe.com)
 - [Stripe API Reference](https://docs.stripe.com/api)
 

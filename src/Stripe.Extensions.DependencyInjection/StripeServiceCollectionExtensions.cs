@@ -10,7 +10,7 @@ namespace Microsoft.Extensions.DependencyInjection;
 public static class StripeServiceCollectionExtensions
 {
     private static readonly AssemblyName AsmName = typeof(StripeServiceCollectionExtensions).Assembly.GetName();
-    
+
     public static IStripeClientBuilder AddStripe(this IServiceCollection services,
         string clientName = DefaultClientConfigurationSectionName, Action<StripeOptions>? configureOptions = null)
     {
