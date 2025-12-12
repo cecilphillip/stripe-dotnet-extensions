@@ -37,7 +37,7 @@ jobs:
     strategy:
       matrix:
         os: [ windows-latest, ubuntu-latest, macOS-latest ]
-        dotnet-version: [ '9.0.x' ]
+        dotnet-version: [ '10.0.x' ]
 
     runs-on: ${{ matrix.os }}
 
@@ -48,7 +48,7 @@ jobs:
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: '9.0.x' 
+        dotnet-version: '10.0.x' 
         dotnet-quality: 'ga'
 
     - name: Build
@@ -66,7 +66,7 @@ jobs:
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: '9.0.x'
+        dotnet-version: '10.0.x'
         dotnet-quality: 'ga'
 
     - name: Create Packages
@@ -93,7 +93,7 @@ jobs:
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: '9.0.x'
+        dotnet-version: '10.0.x'
         dotnet-quality: 'ga'
     
     - name: Download packages
