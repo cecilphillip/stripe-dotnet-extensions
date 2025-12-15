@@ -20,7 +20,7 @@
         <PackageLicenseExpression>MIT</PackageLicenseExpression>
 
         <PackageProjectUrl>$(RepositoryUrl)</PackageProjectUrl>
-        <RepositoryUrl>https://github.com/cecilphillip-stripe/stripe-dotnet-extensions</RepositoryUrl>
+        <RepositoryUrl>https://github.com/cecilphillip/stripe-dotnet-extensions</RepositoryUrl>
         <PublishRepositoryUrl>true</PublishRepositoryUrl>
 
         <PackageReadmeFile>README.md</PackageReadmeFile>

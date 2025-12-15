@@ -7,7 +7,7 @@ namespace Stripe.Extensions.AspNetCore;
 public abstract partial class StripeWebhookHandler<T>(StripeWebhookContext context)
 {
     protected StripeWebhookContext Context { get; } = context;
-    protected ILogger<T> Logger => context.LoggerFactory.CreateLogger<T>();
+    protected ILogger<T> Logger => Context.LoggerFactory.CreateLogger<T>();
     
     public async Task<IResult> ExecuteAsync()
     {
