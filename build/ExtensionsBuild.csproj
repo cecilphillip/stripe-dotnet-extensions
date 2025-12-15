@@ -12,9 +12,9 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Nuke.Common" Version="9.0.4" />
-    <PackageReference Include="Nuke.Components" Version="9.0.4" />
-    <PackageReference Include="System.Formats.Asn1" Version="9.0.3" />
+    <PackageReference Include="Nuke.Common" Version="10.1.0" />
+    <PackageReference Include="Nuke.Components" Version="10.1.0" />
+    <PackageReference Include="System.Formats.Asn1" Version="10.0.1" />
   </ItemGroup>
   
   <ItemGroup>
