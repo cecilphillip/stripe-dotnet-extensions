@@ -30,9 +30,9 @@ public class HomeController : Controller
                 p.Id,
                 p.Name,
                 p.Description,
-                (p.DefaultPrice?.UnitAmount / 100m) ?? 0
+                (p.DefaultPrice?.UnitAmount / 100m)
             ));
-
+        
         return View(slimProducts);
     }
 

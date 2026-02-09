@@ -5,6 +5,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllersWithViews();
 builder.Services.AddStripe();
+builder.Services.AddStripe("ProductsReadOnly");
 
 
 var app = builder.Build();
