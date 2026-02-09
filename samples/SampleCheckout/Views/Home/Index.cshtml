@@ -1,4 +1,6 @@
-﻿@{
+﻿@model IEnumerable<SampleCheckout.Models.SlimProduct>?
+
+@{
     ViewData["Title"] = "Home Page";
 }
 
@@ -6,3 +8,24 @@
     <h1 class="display-4">Welcome</h1>
     <p>Learn about <a href="https://docs.microsoft.com/aspnet/core">building Web apps with ASP.NET Core</a>.</p>
 </div>
+
+@if (Model != null && Model.Any())
+{
+    <div class="table-responsive">
+        <table class="table table-striped table-hover">
+            <thead>
+            <tr>
+                <th scope="col">Product Name</th>
+            </tr>
+            </thead>
+            <tbody>
+            @foreach (var product in Model)
+            {
+                <tr>
+                    <td>@product.Name</td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+}
