@@ -66,8 +66,8 @@ clean-samples:
 # OPENAPI SOURCE GENERATOR
 # ==============================================================================
 
-# Fetch latest OpenAPI spec used by Source Generators (with validation)
-fetch-openapi:
+# Internal: core fetch logic. Parameter `validate` should be "true" or "false".
+fetch-openapi-core validate:
     @echo "Fetching latest Stripe OpenAPI spec..." && \
     mkdir -p {{ SG_DIR }} && \
     TMP="$(mktemp)" && \
@@ -77,27 +77,25 @@ fetch-openapi:
         wget -qO "$TMP" "{{ OPENAPI_URL }}"; \
     fi && \
     echo "Downloaded to $TMP" && \
-    echo "Validating JSON with jq..." && \
-    if command -v jq >/dev/null 2>&1; then \
-        jq -e 'has("openapi") and (has("paths") or has("components"))' "$TMP" >/dev/null || { echo "❌ JSON validation failed (jq)"; rm -f "$TMP"; exit 2; }; \
-    else \
-        echo "❌ jq is required for validation but not installed. Please install jq or run 'just fetch-openapi' manually with validation."; rm -f "$TMP"; exit 2; \
+    if [ "{{ validate }}" = "true" ]; then \
+        echo "Validating JSON with jq..." && \
+        if command -v jq >/dev/null 2>&1; then \
+            jq -e 'has("openapi") and (has("paths") or has("components"))' "$TMP" >/dev/null || { echo "❌ JSON validation failed (jq)"; rm -f "$TMP"; exit 2; }; \
+        else \
+            echo "❌ jq is required for validation but not installed. Please install jq or run the no-validate fetch."; rm -f "$TMP"; exit 2; \
+        fi; \
     fi && \
     mv "$TMP" "{{ SG_SPEC }}" && \
     echo "✓ Updated {{ SG_SPEC }}"
 
-# Fetch latest OpenAPI spec WITHOUT validation (unsafe / force update)
-fetch-openapi-no-validate:
-    @echo "Fetching latest Stripe OpenAPI spec (no validation)..." && \
-    mkdir -p {{ SG_DIR }} && \
-    TMP="$(mktemp)" && \
-    if command -v curl >/dev/null 2>&1; then \
-        curl -fsSL "{{ OPENAPI_URL }}" -o "$TMP"; \
-    else \
-        wget -qO "$TMP" "{{ OPENAPI_URL }}"; \
-    fi && \
-    mv "$TMP" "{{ SG_SPEC }}" && \
-    echo "✓ Replaced {{ SG_SPEC }} (no validation)"
+# Public wrappers
+# fetch-openapi-with-validation: validates using jq
+fetch-openapi-with-validation:
+    @just -q fetch-openapi-core true
+
+# fetch-openapi: backward-compatible no-validation fetch (unsafe)
+fetch-openapi:
+    @just -q fetch-openapi-core false
 
 # ==============================================================================
 # RESTORE & BUILD
