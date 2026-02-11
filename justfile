@@ -86,6 +86,19 @@ fetch-openapi:
     mv "$TMP" "{{ SG_SPEC }}" && \
     echo "✓ Updated {{ SG_SPEC }}"
 
+# Fetch latest OpenAPI spec WITHOUT validation (unsafe / force update)
+fetch-openapi-no-validate:
+    @echo "Fetching latest Stripe OpenAPI spec (no validation)..." && \
+    mkdir -p {{ SG_DIR }} && \
+    TMP="$(mktemp)" && \
+    if command -v curl >/dev/null 2>&1; then \
+        curl -fsSL "{{ OPENAPI_URL }}" -o "$TMP"; \
+    else \
+        wget -qO "$TMP" "{{ OPENAPI_URL }}"; \
+    fi && \
+    mv "$TMP" "{{ SG_SPEC }}" && \
+    echo "✓ Replaced {{ SG_SPEC }} (no validation)"
+
 # ==============================================================================
 # RESTORE & BUILD
 # ==============================================================================
