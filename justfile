@@ -66,17 +66,25 @@ clean-samples:
 # OPENAPI SOURCE GENERATOR
 # ==============================================================================
 
-# Fetch latest OpenAPI spec used by Source Generators
+# Fetch latest OpenAPI spec used by Source Generators (with validation)
 fetch-openapi:
-    @echo "Fetching latest Stripe OpenAPI spec..."
-    @mkdir -p {{ SG_DIR }}
-    @if command -v curl >/dev/null 2>&1; then \
-        curl -fsSL "{{ OPENAPI_URL }}" -o "{{ SG_SPEC }}.tmp"; \
+    @echo "Fetching latest Stripe OpenAPI spec..." && \
+    mkdir -p {{ SG_DIR }} && \
+    TMP="$(mktemp)" && \
+    if command -v curl >/dev/null 2>&1; then \
+        curl -fsSL "{{ OPENAPI_URL }}" -o "$TMP"; \
     else \
-        wget -qO "{{ SG_SPEC }}.tmp" "{{ OPENAPI_URL }}"; \
-    fi
-    @mv "{{ SG_SPEC }}.tmp" "{{ SG_SPEC }}"
-    @echo "✓ Updated {{ SG_SPEC }}"
+        wget -qO "$TMP" "{{ OPENAPI_URL }}"; \
+    fi && \
+    echo "Downloaded to $TMP" && \
+    echo "Validating JSON with jq..." && \
+    if command -v jq >/dev/null 2>&1; then \
+        jq -e 'has("openapi") and (has("paths") or has("components"))' "$TMP" >/dev/null || { echo "❌ JSON validation failed (jq)"; rm -f "$TMP"; exit 2; }; \
+    else \
+        echo "❌ jq is required for validation but not installed. Please install jq or run 'just fetch-openapi' manually with validation."; rm -f "$TMP"; exit 2; \
+    fi && \
+    mv "$TMP" "{{ SG_SPEC }}" && \
+    echo "✓ Updated {{ SG_SPEC }}"
 
 # ==============================================================================
 # RESTORE & BUILD
