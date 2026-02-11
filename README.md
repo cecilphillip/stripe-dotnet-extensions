@@ -18,6 +18,46 @@ dotnet add package Stripe.Extensions.DependencyInjection
 dotnet add package Stripe.Extensions.AspNetCore
 ```
 
+## Building Locally
+
+This project uses [Just](https://just.systems/) for build automation. 
+
+### Prerequisites
+- .NET 10.0 SDK or later
+- Just (install via `brew install just` on macOS/Linux, or see [just.systems](https://just.systems/) for other platforms)
+
+### Available Commands
+
+```bash
+# List all available build recipes
+just
+
+# Build the solution (Release configuration)
+just build
+
+# Run all tests
+just test
+
+# Run a specific test
+just test-filter "FullyQualifiedName~YourTest"
+
+# Create NuGet packages
+just pack
+
+# Clean all build artifacts
+just clean
+
+# Full CI pipeline (clean → build → test → pack)
+just ci
+```
+
+You can also use `dotnet` commands directly if you prefer:
+```bash
+dotnet build
+dotnet test
+dotnet pack
+```
+
 ### Dependency Injection & Configuration
 
 Using `Stripe.Extensions.DependencyInjection` you can register named and unnamed versions of `StripeClient` using `AddStripe()`.
