@@ -51,6 +51,9 @@ jobs:
         dotnet-version: '10.0.x' 
         dotnet-quality: 'ga'
 
+    - name: Restore .NET local tools
+      run: dotnet tool restore
+
     - name: Setup Just
       uses: extractions/setup-just@v2
 
@@ -71,6 +74,9 @@ jobs:
       with:
         dotnet-version: '10.0.x'
         dotnet-quality: 'ga'
+
+    - name: Restore .NET local tools
+      run: dotnet tool restore
 
     - name: Setup Just
       uses: extractions/setup-just@v2
@@ -117,4 +123,3 @@ jobs:
       if: github.event.inputs.packregistry == 'NuGet'
       run: |
         dotnet nuget push ./artifacts/packages/*.nupkg --source https://api.nuget.org/v3/index.json --api-key ${{ secrets.NUGET_API_KEY }}
-        
