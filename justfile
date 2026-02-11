@@ -1,5 +1,4 @@
-# Stripe.NET Extensions - Build Automation with Just
-# Replaces NukeBuild with a lightweight, cross-platform build tool
+# Just Build Automation
 
 # Directories
 SOURCE_DIR := "src"
