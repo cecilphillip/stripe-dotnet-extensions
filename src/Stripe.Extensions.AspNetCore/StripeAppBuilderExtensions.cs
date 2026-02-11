@@ -41,7 +41,7 @@ public static class StripeAppBuilderExtensions
 
             var stripeWebhookContext = new StripeWebhookContext(context, options, stripeClient, loggerFactory);
             var handler = (T)handlerFactory(context.RequestServices, [stripeWebhookContext]);
-            var result = await handler.ExecuteAsync();
+            var result = await handler.ExecuteAsync().ConfigureAwait(false);
             return result;
         });
 
@@ -94,7 +94,7 @@ public static class StripeAppBuilderExtensions
 
             var stripeWebhookContext = new StripeWebhookContext(context, options, stripeClient, loggerFactory);
             var handler = (T)handlerFactory(context.RequestServices, [stripeWebhookContext]);
-            var result = await handler.ExecuteAsync();
+            var result = await handler.ExecuteAsync().ConfigureAwait(false);
             return result;
         });
 
