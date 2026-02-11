@@ -18,7 +18,7 @@ dotnet add package Stripe.Extensions.DependencyInjection
 dotnet add package Stripe.Extensions.AspNetCore
 ```
 
-###Dependency Injection & Configuration
+### Dependency Injection & Configuration
 
 Using `Stripe.Extensions.DependencyInjection` you can register named and unnamed versions of `StripeClient` using `AddStripe()`.
 The StripClient service is registered as scoped. 
