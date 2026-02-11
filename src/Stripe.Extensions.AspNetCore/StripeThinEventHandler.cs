@@ -41,7 +41,7 @@ public abstract partial class StripeThinEventHandler<T>(StripeWebhookContext con
 
             using var stream = new StreamReader(httpContext.Request.Body);
             var request = httpContext.Request;
-            var body = await stream.ReadToEndAsync();
+            var body = await stream.ReadToEndAsync().ConfigureAwait(false);
 
             eventNotification = Context.Client.ParseEventNotification(
                 body,

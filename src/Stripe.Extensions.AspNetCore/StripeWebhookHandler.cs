@@ -30,7 +30,7 @@ public abstract partial class StripeWebhookHandler<T>(StripeWebhookContext conte
             
             using var stream = new StreamReader(httpContext.Request.Body);
             var request = httpContext.Request;
-            var body = await stream.ReadToEndAsync();
+            var body = await stream.ReadToEndAsync().ConfigureAwait(false);
 
             stripeEvent = EventUtility.ConstructEvent(
                 body,
