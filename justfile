@@ -2,6 +2,7 @@
 
 # Directories
 SOURCE_DIR := "src"
+SG_DIR := "src/Stripe.Extensions.AspNetCore.SourceGenerators"
 TESTS_DIR := "tests"
 SAMPLES_DIR := "samples"
 ARTIFACTS_DIR := "artifacts"
@@ -9,6 +10,10 @@ PACKAGES_DIR := ARTIFACTS_DIR / "packages"
 
 # Default shell for recipes (bash with error handling)
 set shell := ["bash", "-c"]
+
+# OpenAPI spec settings for source generator
+OPENAPI_URL := "https://raw.githubusercontent.com/stripe/openapi/refs/heads/master/latest/openapi.spec3.sdk.json"
+SG_SPEC := SG_DIR / "stripeapi.spec3.sdk.json"
 
 # Display all available recipes
 default:
@@ -56,6 +61,22 @@ clean-tests:
 clean-samples:
     @find {{ SAMPLES_DIR }} -type d \( -name "bin" -o -name "obj" \) -exec rm -rf {} + 2>/dev/null || true
     @echo "✓ Sample directories cleaned"
+
+# ==============================================================================
+# OPENAPI SOURCE GENERATOR
+# ==============================================================================
+
+# Fetch latest OpenAPI spec used by Source Generators
+fetch-openapi:
+    @echo "Fetching latest Stripe OpenAPI spec..."
+    @mkdir -p {{ SG_DIR }}
+    @if command -v curl >/dev/null 2>&1; then \
+        curl -fsSL "{{ OPENAPI_URL }}" -o "{{ SG_SPEC }}.tmp"; \
+    else \
+        wget -qO "{{ SG_SPEC }}.tmp" "{{ OPENAPI_URL }}"; \
+    fi
+    @mv "{{ SG_SPEC }}.tmp" "{{ SG_SPEC }}"
+    @echo "✓ Updated {{ SG_SPEC }}"
 
 # ==============================================================================
 # RESTORE & BUILD
