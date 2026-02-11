@@ -111,7 +111,7 @@ jobs:
     - name: Publish packages to GitHub
       if: github.event.inputs.packregistry == 'GitHub'
       run: |
-        dotnet nuget push ./artifacts/packages/*.nupkg --source https://nuget.pkg.github.com/cecilphillip/index.json --api-key ${{ secrets.GITHUB_TOKEN }}        
+        dotnet nuget push ./artifacts/packages/*.nupkg --source https://nuget.pkg.github.com/cecilphillip/index.json --api-key ${{ secrets.NUGET_PAT }}        
 
     - name: Publish packages to NuGet
       if: github.event.inputs.packregistry == 'NuGet'
