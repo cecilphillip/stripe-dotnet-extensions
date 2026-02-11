@@ -272,3 +272,15 @@ public async Task UpdatesCustomerOnCreation()
 To keep track of major Stripe API updates and versions, reference the 
 [API upgrades page](https://docs.stripe.com/upgrades#api-versions) in the Stripe documentation. 
 For a detailed list of API changes, please refer to the [API Changelog](https://docs.stripe.com/changelog).
+
+## Contributing
+
+We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for:
+- Development setup instructions
+- Build and test commands
+- Code style guidelines
+- Pull request process
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE.md](LICENSE.md) for details.

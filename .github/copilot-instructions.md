@@ -2,14 +2,33 @@
 
 This repository contains .NET extension packages for the [Stripe.net SDK](https://github.com/stripe/stripe-dotnet), providing Dependency Injection and ASP.NET Core webhook helpers.
 
-## Build, Test, and Lint
+## Build, Test, and Packaging
 
-- **Build**: Run `./build.sh` (macOS/Linux) or `.\build.ps1` (Windows).
-  - Alternatively: `dotnet build`
-- **Run Tests**: Run `./build.sh --target Test` or `dotnet test`
-- **Run Single Test**: Use `dotnet test --filter` with the fully qualified name.
-  - Example: `dotnet test --filter "FullyQualifiedName~Stripe.Extensions.DependencyInjection.Tests.ServiceCollectionExtensionsTest.CanResolveStripeOptions"`
-- **Lint/Format**: The project uses default .NET analyzers enabled in `Directory.Build.props`.
+This project uses [Just](https://just.systems/) for build automation.
+
+### Build System Commands
+
+**Using Just** (recommended):
+- **Build**: `just build` - Build solution in Release configuration
+- **Build Debug**: `just build-debug` - Build in Debug configuration
+- **Run Tests**: `just test` - Run all unit tests
+- **Run Single Test**: `just test-filter "FullyQualifiedName~Stripe.Extensions.DependencyInjection.Tests.ServiceCollectionExtensionsTest.CanResolveStripeOptions"`
+- **Create Packages**: `just pack` - Build and create NuGet packages
+- **Clean**: `just clean` - Clean all build artifacts
+- **Full Pipeline**: `just ci` - Clean → build → test → pack
+
+**Using dotnet CLI directly**:
+- Build: `dotnet build`
+- Test: `dotnet test`
+- Pack: `dotnet pack`
+
+### Code Analysis & Formatting
+- The project uses default .NET analyzers enabled in `Directory.Build.props`.
+- No external linting/formatting tools required; analyzer warnings treated as build output.
+
+### Setup
+- Install Just: `brew install just` (macOS/Linux) or download from [just.systems](https://just.systems/)
+- See [CONTRIBUTING.md](../CONTRIBUTING.md) for complete developer setup instructions.
 
 ## High-Level Architecture
 
@@ -21,7 +40,7 @@ This repository contains .NET extension packages for the [Stripe.net SDK](https:
   - Simplifies webhook handling.
   - Users implement `StripeWebhookHandler<T>` to handle events.
   - `MapStripeWebhookHandler<T>` registers the route.
-- **Build System**: Uses [Nuke](https://nuke.build/) for build automation (defined in `build/Build.cs`).
+- **Build System**: Uses [Just](https://just.systems/) for build automation (recipes defined in `justfile`). Versioning handled by [MinVer](https://github.com/adamralph/minver).
 
 ## Key Conventions
 
