@@ -1,19 +1,30 @@
 using System.Runtime.CompilerServices;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
+using Stripe.V2.Core;
 
 namespace Stripe.Extensions.AspNetCore;
 
-public abstract partial class StripeWebhookHandler<T>(StripeWebhookContext context)
+/// <summary>
+/// Base class for handling Stripe thin event notifications (v2 events).
+/// Inherit from this class and override the generated On*Async methods to handle specific event types.
+/// </summary>
+/// <typeparam name="T">The derived handler type (for logging purposes).</typeparam>
+public abstract partial class StripeThinEventHandler<T>(StripeWebhookContext context)
 {
     protected StripeWebhookContext Context => context;
     protected ILogger<T> Logger => context.LoggerFactory.CreateLogger<T>();
-    
+
+    /// <summary>
+    /// Parses and executes the thin event notification from the incoming HTTP request.
+    /// </summary>
+    /// <returns>An IResult indicating success (202 Accepted) or failure (400/500).</returns>
     public async Task<IResult> ExecuteAsync()
     {
         var httpContext = Context.HttpContext;
         var response = httpContext.Response;
-        Event stripeEvent;
+        EventNotification eventNotification;
+
         try
         {
             var options = Context.StripeOptions;
@@ -27,17 +38,15 @@ public abstract partial class StripeWebhookHandler<T>(StripeWebhookContext conte
                 Logger.WebhookSecretValidationFailed("Webhook Secret Validation Failed!", ex);
                 throw ex;
             }
-            
+
             using var stream = new StreamReader(httpContext.Request.Body);
             var request = httpContext.Request;
             var body = await stream.ReadToEndAsync().ConfigureAwait(false);
 
-            stripeEvent = EventUtility.ConstructEvent(
+            eventNotification = Context.Client.ParseEventNotification(
                 body,
-                request.Headers["Stripe-Signature"],
-                options.WebhookSecret,
-                300, // default tolerance
-                options.ThrowOnWebhookApiVersionMismatch);
+                request.Headers["Stripe-Signature"]!,
+                options.WebhookSecret);
         }
         catch (Exception e)
         {
@@ -48,27 +57,27 @@ public abstract partial class StripeWebhookHandler<T>(StripeWebhookContext conte
 
         try
         {
-            await ExecuteAsync(stripeEvent).ConfigureAwait(false);
+            await ExecuteAsync(eventNotification).ConfigureAwait(false);
             return Results.Accepted();
         }
         catch (Exception e)
         {
-            Logger.ExecutionError(stripeEvent.Type, e);
+            Logger.ExecutionError(eventNotification.Type, e);
             response.StatusCode = 500;
             return Results.BadRequest();
         }
     }
 
-    private Task UnhandledEventAsync(Event e,
+    private Task UnhandledEventAsync(EventNotification notification,
         [CallerMemberName] string? handlerMethod = null)
     {
-        Logger.UnhandledEvent(e.Type, handlerMethod ?? "<unknown>", null);
+        Logger.UnhandledEvent(notification.Type, handlerMethod ?? "<unknown>", null);
         return Task.CompletedTask;
     }
 
-    protected virtual Task UnknownEventAsync(Event e)
+    protected virtual Task UnknownEventAsync(EventNotification notification)
     {
-        Logger.UnknownEvent(e.Type, null);
+        Logger.UnknownEvent(notification.Type, null);
         return Task.CompletedTask;
     }
 }

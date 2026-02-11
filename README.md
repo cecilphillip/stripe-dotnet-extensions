@@ -172,6 +172,8 @@ public class HomeController : Controller
 The `Stripe.Extensions.AspNetCore` package simplifies Webhook handling by automating the event parsing, signature validation and logging.
 All that's needed is to override the appropriate events of the handler class.
 
+### Snapshot Events (v1)
+
 Create a handler class that inherits from [StripeWebhookHandler](./src/Stripe.Extensions.AspNetCore/StripeWebhookHandler.cs), which provides virtual methods for all known webhook events.
 To handle an event override the corresponding `On*Async` method.
 
@@ -203,6 +205,54 @@ public void Configure(IApplicationBuilder app)
 // Minimal API based apps
 app.MapStripeWebhookHandler<MyWebhookHandler>();
 ```
+
+### Thin Events (v2)
+
+Stripe v2 APIs generate [thin events](https://docs.stripe.com/event-destinations#thin-events) - lightweight event notifications that contain only the event type and related object ID. These are strongly-typed in the Stripe SDK.
+
+Create a handler class that inherits from [StripeThinEventHandler](./src/Stripe.Extensions.AspNetCore/StripeThinEventHandler.cs):
+
+```csharp
+public class MyThinEventHandler : StripeThinEventHandler<MyThinEventHandler>
+{
+    public MyThinEventHandler(StripeWebhookContext context) : base(context) { }
+    
+    public override async Task OnV1BillingMeterErrorReportTriggeredAsync(
+        V1BillingMeterErrorReportTriggeredEventNotification notification)
+    {
+        // Option 1: Fetch the full event with additional data
+        var fullEvent = await notification.FetchEventAsync();
+        
+        // Option 2: Fetch the related object directly
+        var meter = await notification.FetchRelatedObjectAsync();
+        
+        // Process the event...
+    }
+
+    public override async Task OnV2CoreAccountCreatedAsync(
+        V2CoreAccountCreatedEventNotification notification)
+    {
+        var account = await notification.FetchRelatedObjectAsync();
+        // Handle account creation...
+    }
+}
+```
+
+Register the thin event handler with a separate endpoint:
+
+```csharp
+// Minimal API based apps
+app.MapStripeThinEventHandler<MyThinEventHandler>("/stripe/thin-event");
+
+// Or with a named configuration
+app.MapStripeThinEventHandler<MyThinEventHandler>("/stripe/thin-event", "client1");
+```
+
+Key differences from snapshot events:
+- Thin events use `EventNotification` types from `Stripe.Events.*` namespace
+- Each notification provides `FetchEventAsync()` to get the full event with additional data
+- Each notification provides `FetchRelatedObjectAsync()` to fetch the latest version of the related resource
+- Unknown event types return `UnknownEventNotification`
 
 ### Dependency Injection in StripeWebhookHandler
 

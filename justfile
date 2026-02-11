@@ -67,6 +67,7 @@ clean-samples:
 # ==============================================================================
 
 # Internal: core fetch logic. Parameter `validate` should be "true" or "false".
+[private]
 fetch-openapi-core validate:
     @echo "Fetching latest Stripe OpenAPI spec..." && \
     mkdir -p {{ SG_DIR }} && \
