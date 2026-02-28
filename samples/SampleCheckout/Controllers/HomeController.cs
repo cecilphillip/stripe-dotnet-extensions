@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using SampleCheckout.Models;
 using Stripe;
 
 namespace SampleCheckout.Controllers;
@@ -6,17 +7,33 @@ namespace SampleCheckout.Controllers;
 public class HomeController : Controller
 {
     private readonly StripeClient _stripeClient;
-    private readonly ILogger<HomeController> _logger;
 
-    public HomeController(StripeClient stripeClient, ILogger<HomeController> logger)
+    public HomeController([FromKeyedServices("ProductsReadOnly")]StripeClient stripeClient)
     {
         _stripeClient = stripeClient;
-        _logger = logger;
     }
 
-    public IActionResult Index()
+    public async Task<IActionResult> Index()
     {
-        return View();
+        var products = await _stripeClient.V1.Products.ListAsync(new()
+        {
+            Limit = 10,
+            Expand = ["data.default_price"]
+        });
+
+        if (products.Data == null || !products.Data.Any())
+            return View();
+
+        var slimProducts = products.Data
+            .Where(p => p.DefaultPrice is { Recurring: null })
+            .Select(p => new SlimProduct(
+                p.Id,
+                p.Name,
+                p.Description,
+                (p.DefaultPrice?.UnitAmount / 100m) ?? 0m
+            ));
+        
+        return View(slimProducts);
     }
 
     public IActionResult Privacy()

@@ -41,7 +41,60 @@ public static class StripeAppBuilderExtensions
 
             var stripeWebhookContext = new StripeWebhookContext(context, options, stripeClient, loggerFactory);
             var handler = (T)handlerFactory(context.RequestServices, [stripeWebhookContext]);
-            var result = await handler.ExecuteAsync();
+            var result = await handler.ExecuteAsync().ConfigureAwait(false);
+            return result;
+        });
+
+        return endpointRouteBuilder;
+    }
+
+    /// <summary>
+    /// Maps a thin event webhook handler to the specified route pattern.
+    /// </summary>
+    /// <typeparam name="T">The thin event handler type.</typeparam>
+    /// <param name="endpointRouteBuilder">The endpoint route builder.</param>
+    /// <param name="pattern">The route pattern. Defaults to "/stripe/thin-event".</param>
+    /// <returns>The endpoint route builder for chaining.</returns>
+    public static IEndpointRouteBuilder MapStripeThinEventHandler<T>(this IEndpointRouteBuilder endpointRouteBuilder,
+        string pattern = "/stripe/thin-event")
+        where T : StripeThinEventHandler<T>
+    {
+        if (pattern == null)
+            throw new ArgumentNullException(nameof(pattern));
+
+        return endpointRouteBuilder.MapStripeThinEventHandler<T>(pattern,
+            StripeOptions.DefaultClientConfigurationSectionName);
+    }
+
+    /// <summary>
+    /// Maps a thin event webhook handler to the specified route pattern with a named configuration.
+    /// </summary>
+    /// <typeparam name="T">The thin event handler type.</typeparam>
+    /// <param name="endpointRouteBuilder">The endpoint route builder.</param>
+    /// <param name="pattern">The route pattern.</param>
+    /// <param name="namedConfiguration">The named Stripe configuration to use.</param>
+    /// <returns>The endpoint route builder for chaining.</returns>
+    public static IEndpointRouteBuilder MapStripeThinEventHandler<T>(this IEndpointRouteBuilder endpointRouteBuilder,
+        string pattern, string namedConfiguration)
+        where T : StripeThinEventHandler<T>
+    {
+        if (pattern == null)
+            throw new ArgumentNullException(nameof(pattern));
+
+        if (namedConfiguration == null)
+            throw new ArgumentNullException(nameof(namedConfiguration));
+
+        endpointRouteBuilder.MapPost(pattern, async (HttpContext context) =>
+        {
+            var handlerFactory = ActivatorUtilities.CreateFactory(typeof(T), [typeof(StripeWebhookContext)]);
+            var stripeClient = context.RequestServices.GetRequiredKeyedService<StripeClient>(namedConfiguration);
+            var options = context.RequestServices.GetRequiredService<IOptionsSnapshot<StripeOptions>>()
+                .Get(namedConfiguration);
+            var loggerFactory = context.RequestServices.GetRequiredService<ILoggerFactory>();
+
+            var stripeWebhookContext = new StripeWebhookContext(context, options, stripeClient, loggerFactory);
+            var handler = (T)handlerFactory(context.RequestServices, [stripeWebhookContext]);
+            var result = await handler.ExecuteAsync().ConfigureAwait(false);
             return result;
         });
 

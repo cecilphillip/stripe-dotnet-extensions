@@ -18,9 +18,50 @@ dotnet add package Stripe.Extensions.DependencyInjection
 dotnet add package Stripe.Extensions.AspNetCore
 ```
 
-## DependencyInjection registration
+## Building Locally
+
+This project uses [Just](https://just.systems/) for build automation. 
+
+### Prerequisites
+- .NET 10.0 SDK or later
+- Just (install via `brew install just` on macOS/Linux, or see [just.systems](https://just.systems/) for other platforms)
+
+### Available Commands
+
+```bash
+# List all available build recipes
+just
+
+# Build the solution (Release configuration)
+just build
+
+# Run all tests
+just test
+
+# Run a specific test
+just test-filter "FullyQualifiedName~YourTest"
+
+# Create NuGet packages
+just pack
+
+# Clean all build artifacts
+just clean
+
+# Full CI pipeline (clean → build → test → pack)
+just ci
+```
+
+You can also use `dotnet` commands directly if you prefer:
+```bash
+dotnet build
+dotnet test
+dotnet pack
+```
+
+### Dependency Injection & Configuration
 
 Using `Stripe.Extensions.DependencyInjection` you can register named and unnamed versions of `StripeClient` using `AddStripe()`.
+The StripClient service is registered as scoped. 
 
 ```csharp
 // Startup-based apps
@@ -33,7 +74,7 @@ public void ConfigureServices(IServiceCollection services)
 builder.Services.AddStripe();
 ```
 
-The `AddStripe()` extension also supports registering named Stripe clients.
+The `AddStripe()` extension also supports registering named StripeClients, which uses keyed DI registrations.
 
 ```csharp
 builder.Services.AddStripe(); // default client
@@ -44,10 +85,10 @@ builder.Services.AddStripe("client2"); // client2
 ### Configuration
 
 The Stripe [API keys](https://docs.stripe.com/keys#obtain-api-keys) need to be configured in your application before calls can be made using the SDK.
-By default, the extension packages will look for a `Stripe` configuration section when calling `AddStripe()` 
-without a client name. For named clients, the configuration section should match the client name.
+The extension packages will look for a `Stripe` configuration section when calling `AddStripe()`. Configuring multiple clients is also supported by
+using the client name as the key in the configuration section. When configuring the default client without a client name, the key should be `Default`.
 
-To configure the default client: 
+To configure the default client when using `AddStripe()`: 
 ```json
 {
   "Stripe": { 
@@ -59,7 +100,7 @@ To configure the default client:
 }
 ```
 
-To configure a client named `client1`:
+To configure a client named `client1` when using `AddStripe("client1")`::
 ```json
 {
   "Stripe": {
@@ -126,17 +167,21 @@ public class HomeController : Controller
 }
 ```
 
-### Webhook handling
+## Webhook handling
 
 The `Stripe.Extensions.AspNetCore` package simplifies Webhook handling by automating the event parsing, signature validation and logging.
 All that's needed is to override the appropriate events of the handler class.
 
-Create a handler class that inherits from [StripeWebhookHandler](./src/Stripe.Extensions.AspNetCore/StripeWebhookHandler.cs), which defines virtual methods for all known webhook events.
+### Snapshot Events (v1)
+
+Create a handler class that inherits from [StripeWebhookHandler](./src/Stripe.Extensions.AspNetCore/StripeWebhookHandler.cs), which provides virtual methods for all known webhook events.
 To handle an event override the corresponding `On*Async` method.
 
 ```csharp
-public class MyWebhookHandler: StripeWebhookHandler
+public class MyWebhookHandler: StripeWebhookHandler<MyWebhookHandler>();
 {
+    public MyWebhookHandler(StripeWebhookContext context) : base(context) {}
+    
     public override Task OnCustomerCreatedAsync(Event e)
     {
         // handle customer.create event
@@ -144,6 +189,9 @@ public class MyWebhookHandler: StripeWebhookHandler
     }
 }
 ```
+Each handler has a single constructor that accepts an instance of [StripeWebhookContext](./src/Stripe.Extensions.AspNetCore/StripeWebhookContext.cs), which provides
+access to `StripeClient`, the configured `StripeOptions` and an instance of `ILogger`.
+
 
 The last step is to register the webhook handler with ASP.NET Core routing by calling `MapStripeWebhookHandler`.
 
@@ -158,6 +206,54 @@ public void Configure(IApplicationBuilder app)
 app.MapStripeWebhookHandler<MyWebhookHandler>();
 ```
 
+### Thin Events (v2)
+
+Stripe v2 APIs generate [thin events](https://docs.stripe.com/event-destinations#thin-events) - lightweight event notifications that contain only the event type and related object ID. These are strongly-typed in the Stripe SDK.
+
+Create a handler class that inherits from [StripeThinEventHandler](./src/Stripe.Extensions.AspNetCore/StripeThinEventHandler.cs):
+
+```csharp
+public class MyThinEventHandler : StripeThinEventHandler<MyThinEventHandler>
+{
+    public MyThinEventHandler(StripeWebhookContext context) : base(context) { }
+    
+    public override async Task OnV1BillingMeterErrorReportTriggeredAsync(
+        V1BillingMeterErrorReportTriggeredEventNotification notification)
+    {
+        // Option 1: Fetch the full event with additional data
+        var fullEvent = await notification.FetchEventAsync();
+        
+        // Option 2: Fetch the related object directly
+        var meter = await notification.FetchRelatedObjectAsync();
+        
+        // Process the event...
+    }
+
+    public override async Task OnV2CoreAccountCreatedAsync(
+        V2CoreAccountCreatedEventNotification notification)
+    {
+        var account = await notification.FetchRelatedObjectAsync();
+        // Handle account creation...
+    }
+}
+```
+
+Register the thin event handler with a separate endpoint:
+
+```csharp
+// Minimal API based apps
+app.MapStripeThinEventHandler<MyThinEventHandler>("/stripe/thin-event");
+
+// Or with a named configuration
+app.MapStripeThinEventHandler<MyThinEventHandler>("/stripe/thin-event", "client1");
+```
+
+Key differences from snapshot events:
+- Thin events use `EventNotification` types from `Stripe.Events.*` namespace
+- Each notification provides `FetchEventAsync()` to get the full event with additional data
+- Each notification provides `FetchRelatedObjectAsync()` to fetch the latest version of the related resource
+- Unknown event types return `UnknownEventNotification`
+
 ### Dependency Injection in StripeWebhookHandler
 
 The `StripeWebhookHandler` also supports constructor dependency injection, so Stripe or other services can be injected by defining them as constructor parameters.
@@ -165,16 +261,16 @@ The `StripeWebhookHandler` also supports constructor dependency injection, so St
 ```csharp
 public class MyWebhookHandler: StripeWebhookHandler<MyWebhookHandler>
 {
-    private readonly StripeClient _stripeClient;
-    public MyWebhookHandler(StripeClient stripeClient)
+    private readonly IMyService _myService;
+    public MyWebhookHandler(IMyService myService, StripeWebhookContext context) : base(context) {}
     {
-        _stripeClient = stripeClient;
+        _myService = myService;
     }
 
     public override async Task OnCustomerCreatedAsync(Event e)
     {
         Customer customer = (Customer)e.Data.Object;
-        await _stripeClient.V1.Customers.UpdateAsync(customer.Id, new CustomerUpdateOptions()
+        await Context.Client.V1.Customers.UpdateAsync(customer.Id, new CustomerUpdateOptions()
         {
             Description = "New customer"
         });
@@ -219,9 +315,22 @@ public async Task UpdatesCustomerOnCreation()
 
 
 ### Useful links
+- [Stripe.NET](https://github.com/stripe/stripe-dotnet)
 - [Stripe Docs](https://docs.stripe.com)
 - [Stripe API Reference](https://docs.stripe.com/api)
 
 To keep track of major Stripe API updates and versions, reference the 
 [API upgrades page](https://docs.stripe.com/upgrades#api-versions) in the Stripe documentation. 
 For a detailed list of API changes, please refer to the [API Changelog](https://docs.stripe.com/changelog).
+
+## Contributing
+
+We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for:
+- Development setup instructions
+- Build and test commands
+- Code style guidelines
+- Pull request process
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE.md](LICENSE.md) for details.

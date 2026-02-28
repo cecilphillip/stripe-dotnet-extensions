@@ -1,4 +1,3 @@
-using FakeItEasy;
 using Microsoft.Extensions.Logging;
 
 namespace Stripe.Extensions.AspNetCore.Tests;
@@ -9,7 +8,7 @@ internal static class LoggingBuilderExtensions
     {
         if (logger is not null)
             builder.AddProvider(new PassThroughLoggerProvider(logger));
-        
+
         return builder;
     }
 }

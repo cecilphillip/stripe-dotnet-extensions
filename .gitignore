@@ -351,5 +351,5 @@ MigrationBackup/
 
 .idea/
 
-.nuke/temp/
+.nuke/
 **/.DS_Store

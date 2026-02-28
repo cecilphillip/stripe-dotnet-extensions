@@ -1,39 +1,22 @@
 name: build
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "src/**"
-      - "tests/**"
-      - "build/**"
-      - "global.json"
-      - "Directory.Build.props"
-      - "dotnet-tools.json"
-      - "!**/*.md"
-  pull_request:
-    branches: [main]
-    paths:
-      - "src/**"
-      - "tests/**"
-      - "build/**"
-      - "global.json"
-      - "Directory.Build.props"
-      - "dotnet-tools.json"
-  workflow_dispatch:
-    inputs:
-      packregistry:
-        description: "Package registry to publish to"
-        type: choice
-        required: true
-        options: ["GitHub", "NuGet"]
+    push:
+        branches:
+        - main
 
-permissions:
-  contents: read
-
+    workflow_dispatch:
+      inputs:
+        packregistry:
+          description: 'Package registry to publish to'
+          type: choice
+          required: true
+          options:
+            - 'GitHub'
+            - 'NuGet'
 defaults:
   run:
-    shell: pwsh
+    shell: bash
 
 env:
   DOTNET_CLI_TELEMETRY_OPTOUT: true
@@ -41,122 +24,105 @@ env:
   DOTNET_NOLOGO: true
   DOTNET_SKIP_FIRST_TIME_EXPERIENCE: true
   DOTNET_SYSTEM_CONSOLE_ALLOW_ANSI_COLOR_REDIRECTION: 1
-  NUKE_TELEMETRY_OPTOUT: 1
 
+# Only one build instance
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  build-test:
-    name: build-test
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+  build:
+    name: build-${{matrix.os}}
+
+    strategy:
+      matrix:
+        os: [ ubuntu-latest, macOS-latest ]
+        dotnet-version: [ '10.0.x' ]
+
+    runs-on: ${{ matrix.os }}
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+    - name: Checkout repository
+      uses: actions/checkout@v4
 
-      - name: Setup .NET (pinned to global.json) + cache
-        uses: actions/setup-dotnet@v4
-        with:
-          global-json-file: global.json
-          cache: true
-          cache-dependency-path: |
-            **/*.csproj
-            **/packages.lock.json
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '10.0.x' 
+        dotnet-quality: 'ga'
 
-      - name: Restore dotnet tools
-        run: dotnet tool restore
+    - name: Restore .NET local tools
+      run: dotnet tool restore
 
-      - name: Compile
-        run: pwsh ./build.ps1 Compile --Configuration Release
+    - name: Setup Just
+      uses: extractions/setup-just@v2
 
-      - name: Test
-        run: pwsh ./build.ps1 Test --Configuration Release
+    - name: Build
+      run: just build
 
   package:
-    name: package
-    runs-on: ubuntu-latest
-    needs: [build-test]
-    timeout-minutes: 10
+    name: Create NuGet Packages
+    runs-on: 'ubuntu-latest'
+    needs: [build]
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0 # Fetches the entire history and all tags
 
-      - name: Setup .NET (pinned to global.json) + cache
-        uses: actions/setup-dotnet@v4
-        with:
-          global-json-file: global.json
-          cache: true
-          cache-dependency-path: |
-            **/*.csproj
-            **/packages.lock.json
 
-      - name: Restore dotnet tools
-        run: dotnet tool restore
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '10.0.x'
+        dotnet-quality: 'ga'
 
-      - name: Pack
-        run: pwsh ./build.ps1 Pack --Configuration Release
+    - name: Restore .NET local tools
+      run: dotnet tool restore
 
-      - name: Upload packages
-        uses: actions/upload-artifact@v4
-        with:
-          name: packages
-          path: |
-            artifacts/packages/*.nupkg
-            artifacts/packages/*.snupkg
-          if-no-files-found: error
-          retention-days: 7
+    - name: Setup Just
+      uses: extractions/setup-just@v2
+
+    - name: Create Packages
+      run: just pack
+
+    - name: Upload packages to artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: packages
+        path: |
+          artifacts/packages/*.nupkg
+          artifacts/packages/*.snupkg
 
   publish:
     name: publish-packages
-    runs-on: ubuntu-latest
+    runs-on: 'ubuntu-latest'
     needs: [package]
+
     if: github.event_name == 'workflow_dispatch' && github.ref_name == 'main'
-    timeout-minutes: 10
-    permissions:
-      contents: read
-      packages: write
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+    - name: Checkout repository
+      uses: actions/checkout@v4
 
-      - name: Setup .NET (pinned to global.json)
-        uses: actions/setup-dotnet@v4
-        with:
-          global-json-file: global.json
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '10.0.x'
+        dotnet-quality: 'ga'
+    
+    - name: Download packages
+      uses: actions/download-artifact@v4
+      with:
+        name: packages
+        path: ./artifacts/packages
 
-      - name: Download packages
-        uses: actions/download-artifact@v4
-        with:
-          name: packages
-          path: ./artifacts/packages
+    - name: Publish packages to GitHub
+      if: github.event.inputs.packregistry == 'GitHub'
+      run: |
+        dotnet nuget push ./artifacts/packages/*.nupkg --source https://nuget.pkg.github.com/cecilphillip/index.json --api-key ${{ secrets.NUGET_PAT }}        
 
-      - name: Publish to GitHub Packages
-        if: github.event.inputs.packregistry == 'GitHub'
-        env:
-          NUGET_AUTH_TOKEN: ${{ github.token }}
-        run: |
-          dotnet nuget push ./artifacts/packages/*.nupkg \
-            --source https://nuget.pkg.github.com/cecilphillip-stripe/index.json \
-            --api-key $NUGET_AUTH_TOKEN \
-            --skip-duplicate
-
-      - name: Publish to NuGet.org
-        if: github.event.inputs.packregistry == 'NuGet'
-        env:
-          NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
-        run: |
-          dotnet nuget push ./artifacts/packages/*.nupkg \
-            --source https://api.nuget.org/v3/index.json \
-            --api-key $NUGET_API_KEY \
-            --skip-duplicate
+    - name: Publish packages to NuGet
+      if: github.event.inputs.packregistry == 'NuGet'
+      run: |
+        dotnet nuget push ./artifacts/packages/*.nupkg --source https://api.nuget.org/v3/index.json --api-key ${{ secrets.NUGET_API_KEY }}

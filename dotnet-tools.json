@@ -2,10 +2,10 @@
   "version": 1,
   "isRoot": true,
   "tools": {
-    "nuke.globaltool": {
-      "version": "10.1.0",
+    "minver-cli": {
+      "version": "5.0.0",
       "commands": [
-        "nuke"
+        "minver"
       ],
       "rollForward": false
     }
