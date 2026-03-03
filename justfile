@@ -11,6 +11,9 @@ PACKAGES_DIR := ARTIFACTS_DIR / "packages"
 # Default shell for recipes (bash with error handling)
 set shell := ["bash", "-c"]
 
+# Extract version from MinVer
+version := `dotnet tool run minver --default-pre-release-identifiers preview`
+
 # OpenAPI spec settings for source generator
 OPENAPI_URL := "https://raw.githubusercontent.com/stripe/openapi/refs/heads/master/latest/openapi.spec3.sdk.json"
 SG_SPEC := SG_DIR / "stripeapi.spec3.sdk.json"
@@ -140,10 +143,6 @@ test-filter filter: build
 # PACKAGE & PUBLISH
 # ==============================================================================
 
-# Extract version from MinVer
-# Prefer using the local tool via `dotnet tool run minver` (installed by `dotnet tool restore`),
-# then fallback to a global `dotnet minver`, and finally to 0.0.0 if neither is available.
-version := `if command -v dotnet >/dev/null 2>&1 && dotnet tool list --local >/dev/null 2>&1 && dotnet tool list --local | grep -q "minver-cli" 2>/dev/null; then dotnet tool run minver -t v -v e 2>/dev/null || true; elif command -v dotnet-minver >/dev/null 2>&1; then dotnet-minver -t v -v e 2>/dev/null || true; elif command -v dotnet >/dev/null 2>&1 && dotnet --list-sdks >/dev/null 2>&1 && dotnet minver --version >/dev/null 2>&1; then dotnet minver -t v -v e 2>/dev/null || true; else echo "0.0.0"; fi`
 
 # Create NuGet packages (Release configuration)
 pack: clean build
