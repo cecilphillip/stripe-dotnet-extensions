@@ -4,15 +4,14 @@ using Microsoft.Extensions.Logging;
 
 namespace Stripe.Extensions.AspNetCore;
 
-public abstract partial class StripeWebhookHandler<T>(StripeWebhookContext context)
+public abstract partial class StripeWebhookHandler<T>(StripeWebhookContext context) : IStripeWebhookExecutor
 {
     protected StripeWebhookContext Context => context;
-    protected ILogger<T> Logger => context.LoggerFactory.CreateLogger<T>();
+    protected ILogger<T> Logger { get; } = context.LoggerFactory.CreateLogger<T>();
     
     public async Task<IResult> ExecuteAsync()
     {
         var httpContext = Context.HttpContext;
-        var response = httpContext.Response;
         Event stripeEvent;
         try
         {
@@ -24,25 +23,26 @@ public abstract partial class StripeWebhookHandler<T>(StripeWebhookContext conte
                     "You can set it using Stripe:WebhookSecret configuration section or " +
                     "by passing the value to .AddStripe(o => o.WebhookSecret = \"your_secret\") call");
 
-                Logger.WebhookSecretValidationFailed("Webhook Secret Validation Failed!", ex);
+                Logger.WebhookSecretValidationFailed(ex);
                 throw ex;
             }
-            
-            using var stream = new StreamReader(httpContext.Request.Body);
+
+            httpContext.Request.EnableBuffering();
+            using var stream = new StreamReader(httpContext.Request.Body, leaveOpen: true);
             var request = httpContext.Request;
             var body = await stream.ReadToEndAsync().ConfigureAwait(false);
+            httpContext.Request.Body.Position = 0;
 
             stripeEvent = EventUtility.ConstructEvent(
                 body,
                 request.Headers["Stripe-Signature"],
                 options.WebhookSecret,
-                300, // default tolerance
+                options.WebhookTimestampTolerance,
                 options.ThrowOnWebhookApiVersionMismatch);
         }
         catch (Exception e)
         {
             Logger.EventParsingError(e);
-            response.StatusCode = 400;
             return Results.BadRequest();
         }
 
@@ -54,8 +54,7 @@ public abstract partial class StripeWebhookHandler<T>(StripeWebhookContext conte
         catch (Exception e)
         {
             Logger.ExecutionError(stripeEvent.Type, e);
-            response.StatusCode = 500;
-            return Results.BadRequest();
+            return Results.StatusCode(StatusCodes.Status500InternalServerError);
         }
     }
 

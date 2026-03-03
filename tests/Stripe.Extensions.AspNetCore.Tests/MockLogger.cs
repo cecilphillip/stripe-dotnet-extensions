@@ -15,6 +15,13 @@ internal static class LoggingBuilderExtensions
 
 internal class PassThroughLoggerProvider(ILogger logger) : ILoggerProvider
 {
-    public ILogger CreateLogger(string categoryName) => logger;
-    public void Dispose(){}
+    private bool _disposed;
+
+    public ILogger CreateLogger(string categoryName)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        return logger;
+    }
+
+    public void Dispose() => _disposed = true;
 }

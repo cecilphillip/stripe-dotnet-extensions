@@ -2,24 +2,30 @@ using Microsoft.Extensions.Logging;
 
 namespace Stripe.Extensions.AspNetCore;
 
-internal static partial class StripeWebhookHandlerLogger
+public static partial class StripeWebhookHandlerLogger
 {
+    public static readonly EventId EventParsingErrorId = new(1, nameof(EventParsingError));
+    public static readonly EventId ExecutionErrorId = new(2, nameof(ExecutionError));
+    public static readonly EventId UnknownEventId = new(3, nameof(UnknownEvent));
+    public static readonly EventId UnhandledEventId = new(4, nameof(UnhandledEvent));
+    public static readonly EventId WebhookSecretValidationFailedId = new(5, nameof(WebhookSecretValidationFailed));
+
     [LoggerMessage(
         EventId = 1,
         Level = LogLevel.Error,
-        Message = "Exception occured while parsing the Stripe WebHook event payload.")]
+        Message = "Exception occurred while parsing the Stripe WebHook event payload.")]
     public static partial void EventParsingError(this ILogger logger, Exception ex);
 
     [LoggerMessage(
         EventId = 2,
         Level = LogLevel.Error,
-        Message = "Exception occured while executing event handler for {EventType}")]
+        Message = "Exception occurred while executing event handler for {EventType}")]
     public static partial void ExecutionError(this ILogger logger, string eventType, Exception? ex);
 
     [LoggerMessage(
         EventId = 3,
         Level = LogLevel.Warning,
-        Message = "Event type {EventType} is not supported by this version of the library, consider upgrading." +
+        Message = "Event type {EventType} is not supported by this version of the library, consider upgrading. " +
                   "You can override the UnknownEventAsync method to suppress this log message."
     )]
     public static partial void UnknownEvent(this ILogger logger, string eventType, Exception? ex);
@@ -34,6 +40,6 @@ internal static partial class StripeWebhookHandlerLogger
     [LoggerMessage(
         EventId = 5,
         Level = LogLevel.Error,
-        Message = "Webhook secret validation failed for event type {EventType}.")]
-    public static partial void WebhookSecretValidationFailed(this ILogger logger, string eventType, Exception ex);
+        Message = "Webhook secret validation failed.")]
+    public static partial void WebhookSecretValidationFailed(this ILogger logger, Exception ex);
 }

@@ -7,23 +7,17 @@ using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Stripe.Extensions.DependencyInjection;
+using Stripe.V2.Core;
 using Xunit;
 
 namespace Stripe.Extensions.AspNetCore.Tests;
 
-public class WebhookHandlerTests
+public class ThinEventHandlerTests
 {
     private const string Secret = "secret_key";
-    private const string WebhookPath = "/stripe/webhook";
-    private const string TestEventId = "evt_123";
-    private const string TestAccountId = "acct_123";
-    private const string TestCustomerId = "cus_123";
-    private const string TestRequestId = "req_123";
-    private const string TestIdempotencyKey = "idempotency-key-123";
-    private const long EventCreatedTimestamp = 1533204620;
-    private const long CustomerCreatedTimestamp = 123456789;
+    private const string WebhookPath = "/stripe/thin-event";
 
-    private WebApplication BuildWebApplication(List<Event> invocations, Action<StripeOptions>? configureOptions = null, ILogger? logger = null)
+    private WebApplication BuildWebApplication(List<EventNotification> invocations, Action<StripeOptions>? configureOptions = null, ILogger? logger = null)
     {
         var builder = WebApplication.CreateBuilder();
         builder.WebHost.UseTestServer();
@@ -36,7 +30,7 @@ public class WebhookHandlerTests
         builder.Services.AddStripe(configureOptions: configureOptions);
 
         var app = builder.Build();
-        app.MapStripeWebhookHandler<MockHandler>();
+        app.MapStripeThinEventHandler<MockThinHandler>();
 
         return app;
     }
@@ -46,7 +40,7 @@ public class WebhookHandlerTests
     {
         var logger = A.Fake<ILogger>();
         A.CallTo(() => logger.IsEnabled(A<LogLevel>._)).Returns(true);
-        var invocations = new List<Event>();
+        var invocations = new List<EventNotification>();
 
         await using var app = BuildWebApplication(invocations, configureOptions: opts =>
         {
@@ -73,7 +67,7 @@ public class WebhookHandlerTests
     {
         var logger = A.Fake<ILogger>();
         A.CallTo(() => logger.IsEnabled(A<LogLevel>._)).Returns(true);
-        var invocations = new List<Event>();
+        var invocations = new List<EventNotification>();
 
         await using var app = BuildWebApplication(invocations, configureOptions: opts =>
         {
@@ -84,7 +78,7 @@ public class WebhookHandlerTests
         await app.StartAsync();
         using var httpClient = app.GetTestClient();
 
-        var resp = await httpClient.PostAsync(WebhookPath, BuildPayload());
+        var resp = await httpClient.PostAsync(WebhookPath, BuildThinEventPayload());
 
         Assert.False(resp.IsSuccessStatusCode);
         A.CallTo(logger).Where(l => l.Method.Name == "Log"
@@ -99,7 +93,7 @@ public class WebhookHandlerTests
     {
         var logger = A.Fake<ILogger>();
         A.CallTo(() => logger.IsEnabled(A<LogLevel>._)).Returns(true);
-        var invocations = new List<Event>();
+        var invocations = new List<EventNotification>();
 
         await using var app = BuildWebApplication(invocations, configureOptions: opts =>
         {
@@ -110,7 +104,7 @@ public class WebhookHandlerTests
         await app.StartAsync();
 
         using var httpClient = app.GetTestClient();
-        var response = await httpClient.PostAsync(WebhookPath, BuildPayload("customer.deleted"));
+        var response = await httpClient.PostAsync(WebhookPath, BuildThinEventPayload("v2.core.account.created"));
 
         Assert.True(response.IsSuccessStatusCode);
 
@@ -126,7 +120,7 @@ public class WebhookHandlerTests
     {
         var logger = A.Fake<ILogger>();
         A.CallTo(() => logger.IsEnabled(A<LogLevel>._)).Returns(true);
-        var invocations = new List<Event>();
+        var invocations = new List<EventNotification>();
 
         await using var app = BuildWebApplication(invocations, configureOptions: opts =>
         {
@@ -137,7 +131,7 @@ public class WebhookHandlerTests
         await app.StartAsync();
 
         using var httpClient = app.GetTestClient();
-        var response = await httpClient.PostAsync(WebhookPath, BuildPayload("customer.happy"));
+        var response = await httpClient.PostAsync(WebhookPath, BuildThinEventPayload("v2.unknown.event"));
 
         Assert.True(response.IsSuccessStatusCode);
         A.CallTo(logger).Where(l => l.Method.Name == "Log"
@@ -152,7 +146,7 @@ public class WebhookHandlerTests
     {
         var logger = A.Fake<ILogger>();
         A.CallTo(() => logger.IsEnabled(A<LogLevel>._)).Returns(true);
-        var invocations = new List<Event>();
+        var invocations = new List<EventNotification>();
 
         await using var app = BuildWebApplication(invocations, configureOptions: opts =>
         {
@@ -163,7 +157,7 @@ public class WebhookHandlerTests
         await app.StartAsync();
 
         using var httpClient = app.GetTestClient();
-        var response = await httpClient.PostAsync(WebhookPath, BuildPayload("customer.updated"));
+        var response = await httpClient.PostAsync(WebhookPath, BuildThinEventPayload("v2.core.account.updated"));
         Assert.Equal(HttpStatusCode.InternalServerError, response.StatusCode);
 
         A.CallTo(logger).Where(l => l.Method.Name == "Log"
@@ -176,7 +170,7 @@ public class WebhookHandlerTests
     [Fact]
     public async Task RunsEventCallback()
     {
-        var invocations = new List<Event>();
+        var invocations = new List<EventNotification>();
 
         await using var app = BuildWebApplication(invocations, configureOptions: opts =>
         {
@@ -186,56 +180,11 @@ public class WebhookHandlerTests
 
         await app.StartAsync();
         using var httpClient = app.GetTestClient();
-        var response = await httpClient.PostAsync(WebhookPath, BuildPayload());
+        var response = await httpClient.PostAsync(WebhookPath, BuildThinEventPayload());
 
         Assert.True(response.IsSuccessStatusCode);
-        var customerCreatedEvent = Assert.Single(invocations, e => e.Type == "customer.created");
-        Assert.NotNull(customerCreatedEvent.Data.Object);
-        Assert.False(customerCreatedEvent.Livemode);
-        Assert.Equal(TestAccountId, customerCreatedEvent.Account);
-
-        await app.StopAsync();
-    }
-
-    [Fact]
-    public async Task CanDisableApiVersionCheck()
-    {
-        var invocations = new List<Event>();
-
-        await using var app =
-            BuildWebApplication(invocations, configureOptions: options =>
-            {
-                options.ApiKey = Secret;
-                options.WebhookSecret = Secret;
-                options.ThrowOnWebhookApiVersionMismatch = false;
-            });
-
-        await app.StartAsync();
-        using var httpClient = app.GetTestClient();
-        var response = await httpClient.PostAsync(WebhookPath, BuildPayload(apiVersion: "01-02-1234"));
-
-        Assert.True(response.IsSuccessStatusCode);
-        var customerCreatedEvent = Assert.Single(invocations, e => e.Type == "customer.created");
-        Assert.NotNull(customerCreatedEvent.Data.Object);
-        Assert.False(customerCreatedEvent.Livemode);
-
-        await app.StopAsync();
-    }
-
-    [Fact]
-    public async Task ParseEventThrowsWhenApiVersionMismatch()
-    {
-        var invocations = new List<Event>();
-
-        await using var app = BuildWebApplication(invocations, configureOptions: opts =>
-        {
-            opts.ApiKey = Secret;
-            opts.WebhookSecret = Secret;
-        });
-
-        await app.StartAsync();
-        using var httpClient = app.GetTestClient();
-        await httpClient.PostAsync(WebhookPath, BuildPayload(apiVersion: "01-02-1234"));
+        var pingEvent = Assert.Single(invocations, e => e.Type == "v2.core.event_destination.ping");
+        Assert.NotNull(pingEvent);
 
         await app.StopAsync();
     }
@@ -245,7 +194,7 @@ public class WebhookHandlerTests
     {
         var logger = A.Fake<ILogger>();
         A.CallTo(() => logger.IsEnabled(A<LogLevel>._)).Returns(true);
-        var invocations = new List<Event>();
+        var invocations = new List<EventNotification>();
 
         await using var app = BuildWebApplication(invocations, configureOptions: opts =>
         {
@@ -256,7 +205,7 @@ public class WebhookHandlerTests
         await app.StartAsync();
 
         using var httpClient = app.GetTestClient();
-        var payload = BuildPayload();
+        var payload = BuildThinEventPayload();
         payload.Headers.Remove("Stripe-Signature");
         var response = await httpClient.PostAsync(WebhookPath, payload);
 
@@ -274,7 +223,7 @@ public class WebhookHandlerTests
     {
         var logger = A.Fake<ILogger>();
         A.CallTo(() => logger.IsEnabled(A<LogLevel>._)).Returns(true);
-        var invocations = new List<Event>();
+        var invocations = new List<EventNotification>();
 
         await using var app = BuildWebApplication(invocations, configureOptions: opts =>
         {
@@ -285,7 +234,7 @@ public class WebhookHandlerTests
         await app.StartAsync();
 
         using var httpClient = app.GetTestClient();
-        var payload = BuildPayload();
+        var payload = BuildThinEventPayload();
         payload.Headers.Remove("Stripe-Signature");
         payload.Headers.Add("Stripe-Signature", "t=123456789,v1=invalidsignature");
         var response = await httpClient.PostAsync(WebhookPath, payload);
@@ -299,25 +248,25 @@ public class WebhookHandlerTests
         await app.StopAsync();
     }
 
-    private class MockHandler : StripeWebhookHandler<MockHandler>
+    private class MockThinHandler : StripeThinEventHandler<MockThinHandler>
     {
-        private readonly List<Event> _invocations;
+        private readonly List<EventNotification> _invocations;
 
-        public MockHandler(List<Event> invocations, StripeWebhookContext stripeWebhookContext) : base(
+        public MockThinHandler(List<EventNotification> invocations, StripeWebhookContext stripeWebhookContext) : base(
             stripeWebhookContext)
         {
             _invocations = invocations;
         }
 
-        public override Task OnCustomerCreatedAsync(Event e)
+        protected override Task ExecuteAsync(EventNotification notification)
         {
-            _invocations.Add(e);
-            return Task.CompletedTask;
-        }
-
-        public override Task OnCustomerUpdatedAsync(Event e)
-        {
-            throw new Exception();
+            // Throw for account.updated events to test error handling
+            if (notification.Type == "v2.core.account.updated")
+            {
+                throw new Exception("Test exception from handler");
+            }
+            _invocations.Add(notification);
+            return base.ExecuteAsync(notification);
         }
     }
 
@@ -336,33 +285,15 @@ public class WebhookHandlerTests
         }
     }
 
-    private StringContent BuildPayload(string eventType = "customer.created", string? apiVersion = null)
+    private StringContent BuildThinEventPayload(string eventType = "v2.core.event_destination.ping")
     {
-        apiVersion ??= StripeConfiguration.ApiVersion;
-
         var payload = "{" +
-                      $"\"id\": \"{TestEventId}\"," +
-                      "\"object\": \"event\"," +
-                      $"\"account\": \"{TestAccountId}\"," +
-                      $"\"api_version\": \"{apiVersion}\"," +
-                      $"\"created\": {EventCreatedTimestamp}," +
+                      "\"id\": \"evt_123\"," +
+                      "\"type\": \"" + eventType + "\"," +
+                      "\"created_at\": \"2024-01-01T00:00:00Z\"," +
                       "\"data\": {" +
-                      "\"object\": {" +
-                      $"\"id\": \"{TestCustomerId}\"," +
-                      "\"object\": \"customer\"," +
-                      $"\"created\": {CustomerCreatedTimestamp}," +
-                      "\"email\": \"test@stripe.com\"," +
-                      "\"livemode\": false," +
-                      "\"metadata\": {}" +
+                      "\"object\": {}" +
                       "}" +
-                      "}," +
-                      "\"livemode\": false," +
-                      "\"pending_webhooks\": 1," +
-                      "\"request\": {" +
-                      $"\"id\": \"{TestRequestId}\"," +
-                      $"\"idempotency_key\": \"{TestIdempotencyKey}\"" +
-                      "}," +
-                      $"\"type\": \"{eventType}\"" +
                       "}";
 
         var eventTimestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString();

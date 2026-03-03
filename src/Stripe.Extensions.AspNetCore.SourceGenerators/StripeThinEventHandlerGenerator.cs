@@ -36,6 +36,14 @@ public class StripeThinEventHandlerGenerator : IIncrementalGenerator
         ["v2.core.event_destination.ping"] = "V2CoreEventDestinationPing",
     };
 
+    private static readonly Regex LegacyEventPattern = new(
+        @"_\.(created|updated|deleted|closed|returned|ping|triggered|capability_status_updated)$",
+        RegexOptions.Compiled);
+
+    private static readonly Regex BracketNotationPattern = new(
+        @"\[([^\]]+)\]",
+        RegexOptions.Compiled);
+
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
         context.RegisterSourceOutput(context.CompilationProvider, (spc, compilation) =>
@@ -124,7 +132,7 @@ public abstract partial class StripeThinEventHandler<T>
             return true;
             
         // If it has pattern like name_. before action (e.g., account_requirements_.updated), it's legacy
-        if (Regex.IsMatch(eventType, @"_\.(created|updated|deleted|closed|returned|ping|triggered|capability_status_updated)$"))
+        if (LegacyEventPattern.IsMatch(eventType))
             return false;
             
         return true;
@@ -132,7 +140,11 @@ public abstract partial class StripeThinEventHandler<T>
 
     private string GenerateEventHandlerCode()
     {
-        var eventNames = GetThinEventNames().Distinct().OrderBy(e => e).ToArray();
+        var eventNames = GetThinEventNames()
+            .Where(e => !string.IsNullOrWhiteSpace(e))
+            .Distinct()
+            .OrderBy(e => e)
+            .ToArray();
         var info = CultureInfo.InvariantCulture.TextInfo;
         var builder = new StringBuilder();
 
@@ -196,7 +208,7 @@ public abstract partial class StripeThinEventHandler<T>
         // v2.core.account[requirements].updated -> V2CoreAccountIncludingRequirementsUpdated
         
         // Handle bracket notation: [xxx] becomes Including{Xxx}
-        var normalized = Regex.Replace(eventType, @"\[([^\]]+)\]", match =>
+        var normalized = BracketNotationPattern.Replace(eventType, match =>
         {
             var content = match.Groups[1].Value;
             // Title case the content and prefix with Including

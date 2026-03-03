@@ -41,8 +41,8 @@ public static class StripeServiceCollectionExtensions
 
         static void BindOptionsConfiguration(string clientName, StripeOptions options, IServiceProvider provider)
         {
-            var configuration = provider.GetService<IConfiguration>();
-            var configSection = configuration!.GetSection($"Stripe:{clientName}");
+            var configuration = provider.GetRequiredService<IConfiguration>();
+            var configSection = configuration.GetSection($"Stripe:{clientName}");
 
             configSection.Bind(options);
             options.ClientName = clientName;
