@@ -1,6 +1,6 @@
 using System.Runtime.CompilerServices;
 using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.Logging;
+using Stripe.Extensions.DependencyInjection;
 using Stripe.V2.Core;
 
 namespace Stripe.Extensions.AspNetCore;
@@ -10,40 +10,17 @@ namespace Stripe.Extensions.AspNetCore;
 /// Inherit from this class and override the generated On*Async methods to handle specific event types.
 /// </summary>
 /// <typeparam name="T">The derived handler type (for logging purposes).</typeparam>
-public abstract partial class StripeThinEventHandler<T>(StripeWebhookContext context) : IStripeWebhookExecutor
+public abstract partial class StripeThinEventHandler<T>(StripeWebhookContext context) : StripeWebhookHandlerBase<T>(context)
 {
-    protected StripeWebhookContext Context => context;
-    protected ILogger<T> Logger { get; } = context.LoggerFactory.CreateLogger<T>();
-
     /// <summary>
     /// Parses and executes the thin event notification from the incoming HTTP request.
     /// </summary>
     /// <returns>An IResult indicating success (202 Accepted) or failure (400/500).</returns>
-    public async Task<IResult> ExecuteAsync()
+    protected override async Task<IResult> ParseAndDispatchAsync(string body, HttpRequest request, StripeOptions options)
     {
-        var httpContext = Context.HttpContext;
         EventNotification eventNotification;
-
         try
         {
-            var options = Context.StripeOptions;
-            if (string.IsNullOrEmpty(options.WebhookSecret))
-            {
-                var ex = new InvalidOperationException(
-                    "WebhookSecret is required to validate events. " +
-                    "You can set it using Stripe:WebhookSecret configuration section or " +
-                    "by passing the value to .AddStripe(o => o.WebhookSecret = \"your_secret\") call");
-
-                Logger.WebhookSecretValidationFailed(ex);
-                throw ex;
-            }
-
-            httpContext.Request.EnableBuffering();
-            using var stream = new StreamReader(httpContext.Request.Body, leaveOpen: true);
-            var request = httpContext.Request;
-            var body = await stream.ReadToEndAsync().ConfigureAwait(false);
-            httpContext.Request.Body.Position = 0;
-
             var signatureHeader = request.Headers["Stripe-Signature"].ToString();
             if (string.IsNullOrEmpty(signatureHeader))
             {
