@@ -12,4 +12,10 @@ public sealed class StripeCliResource(string name, string command, string workin
 {
     /// <inheritdoc/>
     public string? WebhookSigningSecret { get; internal set; }
+
+    /// <inheritdoc/>
+    public ParameterResource? SecretKey { get; internal set; }
+
+    /// <inheritdoc/>
+    public ParameterResource? PublishableKey { get; internal set; }
 }

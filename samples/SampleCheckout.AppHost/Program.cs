@@ -9,7 +9,7 @@
 // Prerequisites:
 //   - Stripe CLI installed and in PATH  (https://stripe.com/docs/stripe-cli)
 //   - OR: Docker running (for the container mode variant below)
-//   - A Stripe API key (test mode) configured in user secrets or environment
+//   - Stripe API keys configured in user secrets or environment
 
 var builder = DistributedApplication.CreateBuilder(args);
 
@@ -17,10 +17,11 @@ var builder = DistributedApplication.CreateBuilder(args);
 // Parameters
 // ---------------------------------------------------------------------------
 
-// Store your Stripe test API key with user secrets:
-//   dotnet user-secrets set "stripe-api-key" "sk_test_..."
-//   (from the SampleCheckout.AppHost directory)
-var stripeApiKey = builder.AddParameter("stripe-api-key", secret: true);
+// Store your Stripe test keys with user secrets (from the AppHost directory):
+//   dotnet user-secrets set "Parameters:stripe-api-key"        "sk_test_..."
+//   dotnet user-secrets set "Parameters:stripe-publishable-key" "pk_test_..."
+var stripeApiKey        = builder.AddParameter("stripe-api-key",        secret: true);
+var stripePublishableKey = builder.AddParameter("stripe-publishable-key", secret: false);
 
 // ---------------------------------------------------------------------------
 // Application services
@@ -35,29 +36,29 @@ var checkout = builder.AddProject<Projects.SampleCheckout>("checkout");
 // ---------------------------------------------------------------------------
 // Requires the `stripe` CLI to be installed and available in PATH.
 // Run `stripe login` once before starting the AppHost.
-//
-// The CLI will start with `stripe listen --forward-to <checkout-url>/stripe/webhook`
-// and print a signing secret (whsec_...) that is automatically captured and
-// injected into the checkout service as STRIPE_WEBHOOK_SECRET.
 
 // var stripeCli = builder.AddStripeCli("stripe-cli", apiKey: stripeApiKey)
+//     .WithPublishableKey(stripePublishableKey)
 //     .WithWebhookForwardTo(checkout, webhookPath: "/stripe/webhook");
 
 // ---------------------------------------------------------------------------
 // Stripe CLI — Docker container mode (alternative)
 // ---------------------------------------------------------------------------
-// Swap the block above for this one to use the official stripe/stripe-cli image
-// instead of a locally installed CLI. No local installation required.
-//
+// Swap the block above for this one to use the official stripe/stripe-cli image.
+// On macOS/Windows, host.docker.internal routes to the host automatically.
+// On Linux, --add-host=host.docker.internal:host-gateway is added automatically.
+
 var stripeCli = builder.AddStripeCliContainer("stripe-cli", apiKey: stripeApiKey)
+    .WithPublishableKey(stripePublishableKey)
     .WithWebhookForwardTo(checkout, webhookPath: "/stripe/webhook");
 
 // ---------------------------------------------------------------------------
-// Inject the webhook signing secret into the checkout service
+// Inject Stripe credentials into the checkout service
 // ---------------------------------------------------------------------------
-// WithReference reads the signing secret that the CLI printed at startup and
-// makes it available to the checkout app as the STRIPE_WEBHOOK_SECRET env var.
-// The app's Stripe middleware uses this to verify incoming webhook signatures.
+// WithReference injects all available Stripe credentials as environment variables:
+//   STRIPE_SECRET_KEY      — the secret API key
+//   STRIPE_PUBLISHABLE_KEY — the publishable key (if provided via WithPublishableKey)
+//   STRIPE_WEBHOOK_SECRET  — the signing secret captured from CLI output at startup
 //
 // WaitFor ensures checkout starts only after the signing secret is captured,
 // preventing STRIPE_WEBHOOK_SECRET from being empty on first start.

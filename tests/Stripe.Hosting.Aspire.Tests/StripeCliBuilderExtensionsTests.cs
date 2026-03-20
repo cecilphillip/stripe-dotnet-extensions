@@ -264,7 +264,7 @@ public class StripeCliBuilderExtensionsTests
     }
 
     [Fact]
-    public void WithReference_CustomEnvVarName_AddsAnnotation()
+    public void WithReference_InjectsEnvironmentAnnotations()
     {
         var builder = DistributedApplication.CreateBuilder();
         var api = builder.AddContainer("target", "myimage").WithHttpEndpoint(port: 5082);
@@ -272,7 +272,7 @@ public class StripeCliBuilderExtensionsTests
             .WithWebhookForwardTo(api);
 
         var destination = builder.AddContainer("api", "myimage");
-        destination.WithReference(stripe, envVarName: "MY_STRIPE_WEBHOOK_SECRET");
+        destination.WithReference(stripe);
 
         using var app = builder.Build();
         var appModel = app.Services.GetRequiredService<DistributedApplicationModel>();
@@ -303,13 +303,23 @@ public class StripeCliBuilderExtensionsTests
     }
 
     [Fact]
-    public void WithReference_EmptyEnvVarName_Throws()
+    public void WithReference_WithSecretKey_InjectsSecretKeyEnvVar()
     {
         var builder = DistributedApplication.CreateBuilder();
-        var stripe = builder.AddStripeCli("stripe");
-        var api = builder.AddContainer("api", "myimage");
+        var apiKey = builder.AddParameter("key", "sk_test_123");
+        var stripe = builder.AddStripeCli("stripe", apiKey: apiKey);
+        var destination = builder.AddContainer("api", "myimage");
 
-        Assert.Throws<ArgumentException>(() => api.WithReference(stripe, envVarName: ""));
+        destination.WithReference(stripe);
+
+        using var app = builder.Build();
+        var appModel = app.Services.GetRequiredService<DistributedApplicationModel>();
+
+        var apiResource = appModel.Resources.Single(r => r.Name == "api");
+        // STRIPE_SECRET_KEY annotation added because apiKey was provided
+        var envAnnotations = apiResource.Annotations.OfType<EnvironmentCallbackAnnotation>();
+        Assert.NotEmpty(envAnnotations);
+        Assert.NotNull(stripe.Resource.SecretKey);
     }
 
     [Fact]
@@ -345,5 +355,53 @@ public class StripeCliBuilderExtensionsTests
     {
         var resource = new StripeCliResource("test", "stripe", "/tmp");
         Assert.Null(resource.WebhookSigningSecret);
+    }
+
+    [Fact]
+    public void WithPublishableKey_StoresKeyOnResource()
+    {
+        var builder = DistributedApplication.CreateBuilder();
+        var pubKey = builder.AddParameter("pub-key", "pk_test_abc");
+
+        var stripe = builder.AddStripeCli("stripe")
+            .WithPublishableKey(pubKey);
+
+        Assert.NotNull(stripe.Resource.PublishableKey);
+        Assert.Equal("pk_test_abc", stripe.Resource.PublishableKey!.Value);
+    }
+
+    [Fact]
+    public void WithPublishableKey_NullKey_Throws()
+    {
+        var builder = DistributedApplication.CreateBuilder();
+        var stripe = builder.AddStripeCli("stripe");
+
+        Assert.Throws<ArgumentNullException>(() =>
+            stripe.WithPublishableKey(null!));
+    }
+
+    [Fact]
+    public void AddStripeCli_WithApiKey_StoresSecretKeyOnResource()
+    {
+        var builder = DistributedApplication.CreateBuilder();
+        var apiKey = builder.AddParameter("key", "sk_test_abc");
+
+        var stripe = builder.AddStripeCli("stripe", apiKey: apiKey);
+
+        Assert.NotNull(stripe.Resource.SecretKey);
+        Assert.Equal("sk_test_abc", stripe.Resource.SecretKey!.Value);
+    }
+
+    [Fact]
+    public void WithPublishableKey_Container_StoresKeyOnResource()
+    {
+        var builder = DistributedApplication.CreateBuilder();
+        var pubKey = builder.AddParameter("pub-key", "pk_test_abc");
+
+        var stripe = builder.AddStripeCliContainer("stripe")
+            .WithPublishableKey(pubKey);
+
+        Assert.NotNull(stripe.Resource.PublishableKey);
+        Assert.Equal("pk_test_abc", stripe.Resource.PublishableKey!.Value);
     }
 }
