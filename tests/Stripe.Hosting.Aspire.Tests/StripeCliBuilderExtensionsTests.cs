@@ -1,0 +1,349 @@
+using Aspire.Hosting;
+using Aspire.Hosting.ApplicationModel;
+using Microsoft.Extensions.DependencyInjection;
+using Xunit;
+
+namespace Stripe.Hosting.Aspire.Tests;
+
+public class StripeCliBuilderExtensionsTests
+{
+    private const string TestApiKeyValue = "sk_test_123";
+
+    [Fact]
+    public void AddStripeCli_RegistersStripeCliResource()
+    {
+        var builder = DistributedApplication.CreateBuilder();
+
+        builder.AddStripeCli("stripe");
+
+        using var app = builder.Build();
+        var appModel = app.Services.GetRequiredService<DistributedApplicationModel>();
+
+        var resource = Assert.Single(appModel.Resources.OfType<StripeCliResource>());
+        Assert.Equal("stripe", resource.Name);
+        Assert.Equal("stripe", resource.Command);
+    }
+
+    [Fact]
+    public void AddStripeCli_WithCustomPath_UsesCustomPath()
+    {
+        var builder = DistributedApplication.CreateBuilder();
+
+        builder.AddStripeCli("stripe", stripePath: "/usr/local/bin/stripe");
+
+        using var app = builder.Build();
+        var appModel = app.Services.GetRequiredService<DistributedApplicationModel>();
+
+        var resource = Assert.Single(appModel.Resources.OfType<StripeCliResource>());
+        Assert.Equal("/usr/local/bin/stripe", resource.Command);
+    }
+
+    [Fact]
+    public async Task AddStripeCli_AddsListenAsFirstArg()
+    {
+        var builder = DistributedApplication.CreateBuilder();
+
+        builder.AddStripeCli("stripe");
+
+        using var app = builder.Build();
+        var appModel = app.Services.GetRequiredService<DistributedApplicationModel>();
+        var resource = Assert.Single(appModel.Resources.OfType<StripeCliResource>());
+
+        var args = await resource.GetArgumentValuesAsync();
+
+        Assert.Contains("listen", args);
+        Assert.Equal("listen", args[0]);
+    }
+
+    [Fact]
+    public void AddStripeCli_WithApiKey_SetsApiKeyEnvironmentVariable()
+    {
+        var builder = DistributedApplication.CreateBuilder();
+        var apiKey = builder.AddParameter("stripe-api-key", TestApiKeyValue);
+
+        builder.AddStripeCli("stripe", apiKey: apiKey);
+
+        using var app = builder.Build();
+        var appModel = app.Services.GetRequiredService<DistributedApplicationModel>();
+        var resource = Assert.Single(appModel.Resources.OfType<StripeCliResource>());
+
+        var envAnnotations = resource.Annotations.OfType<EnvironmentCallbackAnnotation>();
+        Assert.NotEmpty(envAnnotations);
+    }
+
+    [Fact]
+    public void AddStripeCli_NullBuilder_Throws()
+    {
+        IDistributedApplicationBuilder builder = null!;
+        Assert.Throws<ArgumentNullException>(() => builder.AddStripeCli("stripe"));
+    }
+
+    [Fact]
+    public void AddStripeCli_EmptyName_Throws()
+    {
+        var builder = DistributedApplication.CreateBuilder();
+        Assert.Throws<ArgumentException>(() => builder.AddStripeCli(""));
+    }
+
+    [Fact]
+    public void WithWebhookForwardTo_SingleTarget_AddsCallbackAnnotation()
+    {
+        var builder = DistributedApplication.CreateBuilder();
+        var api = builder.AddContainer("api", "myimage").WithHttpEndpoint(port: 5082);
+
+        builder.AddStripeCli("stripe")
+            .WithWebhookForwardTo(api, webhookPath: "/webhooks/stripe");
+
+        using var app = builder.Build();
+        var appModel = app.Services.GetRequiredService<DistributedApplicationModel>();
+        var resource = Assert.Single(appModel.Resources.OfType<StripeCliResource>());
+
+        // listen (1) + forward-to callback (1)
+        var argsAnnotations = resource.Annotations.OfType<CommandLineArgsCallbackAnnotation>();
+        Assert.Equal(2, argsAnnotations.Count());
+    }
+
+    [Fact]
+    public void WithWebhookForwardTo_WithEvents_AddsEventsAnnotation()
+    {
+        var builder = DistributedApplication.CreateBuilder();
+        var api = builder.AddContainer("api", "myimage").WithHttpEndpoint(port: 5082);
+
+        builder.AddStripeCli("stripe")
+            .WithWebhookForwardTo(api, webhookPath: "/webhooks/stripe",
+                                  events: ["payment_intent.created", "charge.succeeded"]);
+
+        using var app = builder.Build();
+        var appModel = app.Services.GetRequiredService<DistributedApplicationModel>();
+        var resource = Assert.Single(appModel.Resources.OfType<StripeCliResource>());
+
+        // listen (1) + forward-to callback (1) + events (1) = 3
+        var argsAnnotations = resource.Annotations.OfType<CommandLineArgsCallbackAnnotation>();
+        Assert.Equal(3, argsAnnotations.Count());
+    }
+
+    [Fact]
+    public void WithWebhookForwardTo_SkipVerify_AddsSkipVerifyAnnotation()
+    {
+        var builder = DistributedApplication.CreateBuilder();
+        var api = builder.AddContainer("api", "myimage").WithHttpEndpoint(port: 5082);
+
+        builder.AddStripeCli("stripe")
+            .WithWebhookForwardTo(api, webhookPath: "/webhooks/stripe", skipVerify: true);
+
+        using var app = builder.Build();
+        var appModel = app.Services.GetRequiredService<DistributedApplicationModel>();
+        var resource = Assert.Single(appModel.Resources.OfType<StripeCliResource>());
+
+        // listen (1) + forward-to callback (1) + skip-verify (1) = 3
+        var argsAnnotations = resource.Annotations.OfType<CommandLineArgsCallbackAnnotation>();
+        Assert.Equal(3, argsAnnotations.Count());
+    }
+
+    [Fact]
+    public void WithWebhookForwardTo_MultipleTargets_AddsCallbackPerTarget()
+    {
+        var builder = DistributedApplication.CreateBuilder();
+        var service1 = builder.AddContainer("api1", "img").WithHttpEndpoint(port: 5082);
+        var service2 = builder.AddContainer("api2", "img").WithHttpEndpoint(port: 5083);
+        var service3 = builder.AddContainer("api3", "img").WithHttpEndpoint(port: 5084);
+
+        builder.AddStripeCli("stripe")
+            .WithWebhookForwardTo("/webhooks/stripe", service1, service2, service3);
+
+        using var app = builder.Build();
+        var appModel = app.Services.GetRequiredService<DistributedApplicationModel>();
+        var resource = Assert.Single(appModel.Resources.OfType<StripeCliResource>());
+
+        // listen (1) + 3 target callbacks = 4
+        var argsAnnotations = resource.Annotations.OfType<CommandLineArgsCallbackAnnotation>();
+        Assert.Equal(4, argsAnnotations.Count());
+    }
+
+    [Fact]
+    public void WithWebhookForwardTo_MultipleTargets_EmptyArray_Throws()
+    {
+        var builder = DistributedApplication.CreateBuilder();
+        var stripe = builder.AddStripeCli("stripe");
+
+        Assert.Throws<ArgumentException>(() =>
+            stripe.WithWebhookForwardTo("/webhooks/stripe", []));
+    }
+
+    [Fact]
+    public void WithWebhookConnectForwardTo_SingleTarget_AddsCallbackAnnotation()
+    {
+        var builder = DistributedApplication.CreateBuilder();
+        var api = builder.AddContainer("api", "myimage").WithHttpEndpoint(port: 5082);
+
+        builder.AddStripeCli("stripe")
+            .WithWebhookForwardTo(api)
+            .WithWebhookConnectForwardTo(api, webhookPath: "/webhooks/stripe-connect");
+
+        using var app = builder.Build();
+        var appModel = app.Services.GetRequiredService<DistributedApplicationModel>();
+        var resource = Assert.Single(appModel.Resources.OfType<StripeCliResource>());
+
+        // listen (1) + forward-to (1) + connect-forward-to (1) = 3
+        var argsAnnotations = resource.Annotations.OfType<CommandLineArgsCallbackAnnotation>();
+        Assert.Equal(3, argsAnnotations.Count());
+    }
+
+    [Fact]
+    public void WithWebhookConnectForwardTo_MultipleTargets_AddsCallbackPerTarget()
+    {
+        var builder = DistributedApplication.CreateBuilder();
+        var service1 = builder.AddContainer("api1", "img").WithHttpEndpoint(port: 5082);
+        var service2 = builder.AddContainer("api2", "img").WithHttpEndpoint(port: 5083);
+
+        builder.AddStripeCli("stripe")
+            .WithWebhookForwardTo(service1)
+            .WithWebhookConnectForwardTo("/webhooks/connect", service1, service2);
+
+        using var app = builder.Build();
+        var appModel = app.Services.GetRequiredService<DistributedApplicationModel>();
+        var resource = Assert.Single(appModel.Resources.OfType<StripeCliResource>());
+
+        // listen (1) + forward-to (1) + connect callbacks (2) = 4
+        var argsAnnotations = resource.Annotations.OfType<CommandLineArgsCallbackAnnotation>();
+        Assert.Equal(4, argsAnnotations.Count());
+    }
+
+    [Fact]
+    public async Task WithApiKey_AddsApiKeyArg()
+    {
+        var builder = DistributedApplication.CreateBuilder();
+        var apiKey = builder.AddParameter("api-key", TestApiKeyValue);
+
+        builder.AddStripeCli("stripe")
+            .WithApiKey(apiKey);
+
+        using var app = builder.Build();
+        var appModel = app.Services.GetRequiredService<DistributedApplicationModel>();
+        var resource = Assert.Single(appModel.Resources.OfType<StripeCliResource>());
+
+        var args = await resource.GetArgumentValuesAsync();
+
+        Assert.Contains("--api-key", args);
+        Assert.Contains(TestApiKeyValue, args);
+    }
+
+    [Fact]
+    public void WithApiKey_NullBuilder_Throws()
+    {
+        IResourceBuilder<StripeCliResource> builder = null!;
+        var apiKeyBuilder = DistributedApplication.CreateBuilder().AddParameter("key", "val");
+        Assert.Throws<ArgumentNullException>(() => builder.WithApiKey(apiKeyBuilder));
+    }
+
+    [Fact]
+    public void WithApiKey_NullKey_Throws()
+    {
+        var builder = DistributedApplication.CreateBuilder();
+        var stripe = builder.AddStripeCli("stripe");
+        Assert.Throws<ArgumentNullException>(() => stripe.WithApiKey(null!));
+    }
+
+    [Fact]
+    public void WithReference_InjectsDefaultWebhookSecretEnvVar()
+    {
+        var builder = DistributedApplication.CreateBuilder();
+        var api = builder.AddContainer("target", "myimage").WithHttpEndpoint(port: 5082);
+        var stripe = builder.AddStripeCli("stripe")
+            .WithWebhookForwardTo(api);
+
+        var destination = builder.AddContainer("api", "myimage");
+        destination.WithReference(stripe);
+
+        using var app = builder.Build();
+        var appModel = app.Services.GetRequiredService<DistributedApplicationModel>();
+
+        var apiResource = appModel.Resources.Single(r => r.Name == "api");
+        var envAnnotations = apiResource.Annotations.OfType<EnvironmentCallbackAnnotation>();
+        Assert.NotEmpty(envAnnotations);
+    }
+
+    [Fact]
+    public void WithReference_CustomEnvVarName_AddsAnnotation()
+    {
+        var builder = DistributedApplication.CreateBuilder();
+        var api = builder.AddContainer("target", "myimage").WithHttpEndpoint(port: 5082);
+        var stripe = builder.AddStripeCli("stripe")
+            .WithWebhookForwardTo(api);
+
+        var destination = builder.AddContainer("api", "myimage");
+        destination.WithReference(stripe, envVarName: "MY_STRIPE_WEBHOOK_SECRET");
+
+        using var app = builder.Build();
+        var appModel = app.Services.GetRequiredService<DistributedApplicationModel>();
+
+        var apiResource = appModel.Resources.Single(r => r.Name == "api");
+        var envAnnotations = apiResource.Annotations.OfType<EnvironmentCallbackAnnotation>();
+        Assert.NotEmpty(envAnnotations);
+    }
+
+    [Fact]
+    public void WithReference_NullBuilder_Throws()
+    {
+        var builder = DistributedApplication.CreateBuilder();
+        var stripe = builder.AddStripeCli("stripe");
+
+        IResourceBuilder<ContainerResource> apiBuilder = null!;
+        Assert.Throws<ArgumentNullException>(() => apiBuilder.WithReference(stripe));
+    }
+
+    [Fact]
+    public void WithReference_NullSource_Throws()
+    {
+        var builder = DistributedApplication.CreateBuilder();
+        var api = builder.AddContainer("api", "myimage");
+
+        Assert.Throws<ArgumentNullException>(() =>
+            api.WithReference((IResourceBuilder<StripeCliResource>)null!));
+    }
+
+    [Fact]
+    public void WithReference_EmptyEnvVarName_Throws()
+    {
+        var builder = DistributedApplication.CreateBuilder();
+        var stripe = builder.AddStripeCli("stripe");
+        var api = builder.AddContainer("api", "myimage");
+
+        Assert.Throws<ArgumentException>(() => api.WithReference(stripe, envVarName: ""));
+    }
+
+    [Fact]
+    public void WithWebhookForwardTo_CalledTwice_OnlyOneSecretResolverRegistered()
+    {
+        var builder = DistributedApplication.CreateBuilder();
+        var service1 = builder.AddContainer("api1", "img").WithHttpEndpoint(port: 5082);
+        var service2 = builder.AddContainer("api2", "img").WithHttpEndpoint(port: 5083);
+
+        builder.AddStripeCli("stripe")
+            .WithWebhookForwardTo(service1)
+            .WithWebhookForwardTo(service2);
+
+        using var app = builder.Build();
+        var appModel = app.Services.GetRequiredService<DistributedApplicationModel>();
+        var resource = Assert.Single(appModel.Resources.OfType<StripeCliResource>());
+
+        // listen (1) + 2 forward-to callbacks (2) = 3 CommandLineArgsCallbackAnnotation entries
+        // The StripeSecretResolverAnnotation should appear exactly once (idempotent guard)
+        var argsAnnotations = resource.Annotations.OfType<CommandLineArgsCallbackAnnotation>();
+        Assert.Equal(3, argsAnnotations.Count());
+    }
+
+    [Fact]
+    public void StripeCliResource_ImplementsIStripeCliResource()
+    {
+        var resource = new StripeCliResource("test", "stripe", "/tmp");
+        Assert.IsAssignableFrom<IStripeCliResource>(resource);
+    }
+
+    [Fact]
+    public void StripeCliResource_WebhookSigningSecret_InitiallyNull()
+    {
+        var resource = new StripeCliResource("test", "stripe", "/tmp");
+        Assert.Null(resource.WebhookSigningSecret);
+    }
+}
