@@ -37,8 +37,7 @@ var checkout = builder.AddProject<Projects.SampleCheckout>("checkout");
 // Requires the `stripe` CLI to be installed and available in PATH.
 // Run `stripe login` once before starting the AppHost.
 
-// var stripeCli = builder.AddStripeCli("stripe-cli", apiKey: stripeApiKey)
-//     .WithPublishableKey(stripePublishableKey)
+// var stripeCli = builder.AddStripeCli("stripe-cli", apiKey: stripeApiKey, publishableKey: stripePublishableKey)
 //     .WithWebhookForwardTo(checkout, webhookPath: "/stripe/webhook");
 
 // ---------------------------------------------------------------------------
@@ -48,8 +47,7 @@ var checkout = builder.AddProject<Projects.SampleCheckout>("checkout");
 // On macOS/Windows, host.docker.internal routes to the host automatically.
 // On Linux, --add-host=host.docker.internal:host-gateway is added automatically.
 
-var stripeCli = builder.AddStripeCliContainer("stripe-cli", apiKey: stripeApiKey)
-    .WithPublishableKey(stripePublishableKey)
+var stripeCli = builder.AddStripeCliContainer("stripe-cli", apiKey: stripeApiKey, publishableKey: stripePublishableKey)
     .WithWebhookForwardTo(checkout, webhookPath: "/stripe/webhook");
 
 // ---------------------------------------------------------------------------

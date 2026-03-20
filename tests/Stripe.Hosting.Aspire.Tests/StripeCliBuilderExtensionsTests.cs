@@ -393,13 +393,24 @@ public class StripeCliBuilderExtensionsTests
     }
 
     [Fact]
-    public void WithPublishableKey_Container_StoresKeyOnResource()
+    public void AddStripeCli_WithPublishableKey_StoresKeyOnResource()
     {
         var builder = DistributedApplication.CreateBuilder();
         var pubKey = builder.AddParameter("pub-key", "pk_test_abc");
 
-        var stripe = builder.AddStripeCliContainer("stripe")
-            .WithPublishableKey(pubKey);
+        var stripe = builder.AddStripeCli("stripe", publishableKey: pubKey);
+
+        Assert.NotNull(stripe.Resource.PublishableKey);
+        Assert.Equal("pk_test_abc", stripe.Resource.PublishableKey!.Value);
+    }
+
+    [Fact]
+    public void AddStripeCliContainer_WithPublishableKey_StoresKeyOnResource()
+    {
+        var builder = DistributedApplication.CreateBuilder();
+        var pubKey = builder.AddParameter("pub-key", "pk_test_abc");
+
+        var stripe = builder.AddStripeCliContainer("stripe", publishableKey: pubKey);
 
         Assert.NotNull(stripe.Resource.PublishableKey);
         Assert.Equal("pk_test_abc", stripe.Resource.PublishableKey!.Value);
@@ -431,8 +442,7 @@ public class StripeCliBuilderExtensionsTests
         var builder = DistributedApplication.CreateBuilder();
         var apiKey = builder.AddParameter("key", "sk_test_123");
         var pubKey = builder.AddParameter("pub-key", "pk_test_abc");
-        var stripe = builder.AddStripeCli("stripe", apiKey: apiKey)
-            .WithPublishableKey(pubKey);
+        var stripe = builder.AddStripeCli("stripe", apiKey: apiKey, publishableKey: pubKey);
         var destination = builder.AddContainer("api", "myimage");
 
         destination.WithReference(stripe);

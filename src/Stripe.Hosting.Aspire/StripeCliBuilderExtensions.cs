@@ -39,6 +39,7 @@ public static class StripeCliBuilderExtensions
         this IDistributedApplicationBuilder builder,
         [ResourceName] string name,
         IResourceBuilder<ParameterResource>? apiKey = null,
+        IResourceBuilder<ParameterResource>? publishableKey = null,
         string? stripePath = null)
     {
         ArgumentNullException.ThrowIfNull(builder);
@@ -58,6 +59,11 @@ public static class StripeCliBuilderExtensions
                 context.EnvironmentVariables[ApiKeyEnvVar] = ReferenceExpression.Create($"{apiKey.Resource}"));
         }
 
+        if (publishableKey is not null)
+        {
+            resource.PublishableKey = publishableKey.Resource;
+        }
+
         return resourceBuilder;
     }
 
@@ -68,11 +74,13 @@ public static class StripeCliBuilderExtensions
     /// <param name="builder">The <see cref="IDistributedApplicationBuilder"/>.</param>
     /// <param name="name">The name of the resource.</param>
     /// <param name="apiKey">Optional parameter resource providing the Stripe secret API key.</param>
+    /// <param name="publishableKey">Optional parameter resource providing the Stripe publishable key.</param>
     /// <returns>A reference to the <see cref="IResourceBuilder{StripeCliContainerResource}"/>.</returns>
     public static IResourceBuilder<StripeCliContainerResource> AddStripeCliContainer(
         this IDistributedApplicationBuilder builder,
         [ResourceName] string name,
-        IResourceBuilder<ParameterResource>? apiKey = null)
+        IResourceBuilder<ParameterResource>? apiKey = null,
+        IResourceBuilder<ParameterResource>? publishableKey = null)
     {
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentException.ThrowIfNullOrEmpty(name);
@@ -98,6 +106,11 @@ public static class StripeCliBuilderExtensions
             resource.SecretKey = apiKey.Resource;
             resourceBuilder.WithEnvironment(context =>
                 context.EnvironmentVariables[ApiKeyEnvVar] = ReferenceExpression.Create($"{apiKey.Resource}"));
+        }
+
+        if (publishableKey is not null)
+        {
+            resource.PublishableKey = publishableKey.Resource;
         }
 
         return resourceBuilder;
