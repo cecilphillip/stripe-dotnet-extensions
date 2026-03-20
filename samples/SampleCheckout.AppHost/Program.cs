@@ -55,10 +55,20 @@ var stripeCli = builder.AddStripeCliContainer("stripe-cli", apiKey: stripeApiKey
 // ---------------------------------------------------------------------------
 // Inject Stripe credentials into the checkout service
 // ---------------------------------------------------------------------------
-// WithReference injects all available Stripe credentials as environment variables:
+// WithReference injects all available Stripe credentials as environment variables.
+//
+// Standalone vars (for custom usage):
 //   STRIPE_SECRET_KEY      — the secret API key
-//   STRIPE_PUBLISHABLE_KEY — the publishable key (if provided via WithPublishableKey)
+//   STRIPE_PUBLISHABLE_KEY — the publishable key (because WithPublishableKey was called)
 //   STRIPE_WEBHOOK_SECRET  — the signing secret captured from CLI output at startup
+//
+// Stripe.Extensions.DependencyInjection config-binding vars (default clientName = "Default"):
+//   Stripe__Default__ApiKey        — maps to Stripe:Default:ApiKey
+//   Stripe__Default__PublicKey     — maps to Stripe:Default:PublicKey
+//   Stripe__Default__WebhookSecret — maps to Stripe:Default:WebhookSecret
+//
+// This means services.AddStripe() in the checkout app requires zero additional configuration.
+// Use clientName: "Secondary" to target a named client (services.AddStripe("Secondary")).
 //
 // WaitFor ensures checkout starts only after the signing secret is captured,
 // preventing STRIPE_WEBHOOK_SECRET from being empty on first start.

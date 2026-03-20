@@ -404,4 +404,77 @@ public class StripeCliBuilderExtensionsTests
         Assert.NotNull(stripe.Resource.PublishableKey);
         Assert.Equal("pk_test_abc", stripe.Resource.PublishableKey!.Value);
     }
+
+    [Fact]
+    public void WithReference_WithSecretKey_InjectsDiConfigEnvVars()
+    {
+        var builder = DistributedApplication.CreateBuilder();
+        var apiKey = builder.AddParameter("key", "sk_test_123");
+        var stripe = builder.AddStripeCli("stripe", apiKey: apiKey);
+        var destination = builder.AddContainer("api", "myimage");
+
+        destination.WithReference(stripe);
+
+        using var app = builder.Build();
+        var appModel = app.Services.GetRequiredService<DistributedApplicationModel>();
+        var apiResource = appModel.Resources.Single(r => r.Name == "api");
+
+        // Should have annotations for: STRIPE_SECRET_KEY, Stripe__Default__ApiKey,
+        // STRIPE_WEBHOOK_SECRET, Stripe__Default__WebhookSecret
+        var envAnnotations = apiResource.Annotations.OfType<EnvironmentCallbackAnnotation>();
+        Assert.Equal(4, envAnnotations.Count());
+    }
+
+    [Fact]
+    public void WithReference_WithAllKeys_InjectsAllEnvVars()
+    {
+        var builder = DistributedApplication.CreateBuilder();
+        var apiKey = builder.AddParameter("key", "sk_test_123");
+        var pubKey = builder.AddParameter("pub-key", "pk_test_abc");
+        var stripe = builder.AddStripeCli("stripe", apiKey: apiKey)
+            .WithPublishableKey(pubKey);
+        var destination = builder.AddContainer("api", "myimage");
+
+        destination.WithReference(stripe);
+
+        using var app = builder.Build();
+        var appModel = app.Services.GetRequiredService<DistributedApplicationModel>();
+        var apiResource = appModel.Resources.Single(r => r.Name == "api");
+
+        // STRIPE_SECRET_KEY, Stripe__Default__ApiKey,
+        // STRIPE_PUBLISHABLE_KEY, Stripe__Default__PublicKey,
+        // STRIPE_WEBHOOK_SECRET, Stripe__Default__WebhookSecret
+        var envAnnotations = apiResource.Annotations.OfType<EnvironmentCallbackAnnotation>();
+        Assert.Equal(6, envAnnotations.Count());
+    }
+
+    [Fact]
+    public void WithReference_CustomClientName_UsesCorrectSectionKey()
+    {
+        var builder = DistributedApplication.CreateBuilder();
+        var apiKey = builder.AddParameter("key", "sk_test_123");
+        var stripe = builder.AddStripeCli("stripe", apiKey: apiKey);
+        var destination = builder.AddContainer("api", "myimage");
+
+        destination.WithReference(stripe, clientName: "Secondary");
+
+        using var app = builder.Build();
+        var appModel = app.Services.GetRequiredService<DistributedApplicationModel>();
+        var apiResource = appModel.Resources.Single(r => r.Name == "api");
+
+        // STRIPE_SECRET_KEY, Stripe__Secondary__ApiKey,
+        // STRIPE_WEBHOOK_SECRET, Stripe__Secondary__WebhookSecret
+        var envAnnotations = apiResource.Annotations.OfType<EnvironmentCallbackAnnotation>();
+        Assert.Equal(4, envAnnotations.Count());
+    }
+
+    [Fact]
+    public void WithReference_EmptyClientName_Throws()
+    {
+        var builder = DistributedApplication.CreateBuilder();
+        var stripe = builder.AddStripeCli("stripe");
+        var api = builder.AddContainer("api", "myimage");
+
+        Assert.Throws<ArgumentException>(() => api.WithReference(stripe, clientName: ""));
+    }
 }

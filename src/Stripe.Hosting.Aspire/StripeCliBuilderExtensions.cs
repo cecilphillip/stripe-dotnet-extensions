@@ -287,45 +287,79 @@ public static class StripeCliBuilderExtensions
         return builder;
     }
 
+    private const string DefaultClientName = "Default";
+
     /// <summary>
     /// Adds a reference to a Stripe CLI resource, injecting Stripe credentials as environment
-    /// variables into the destination resource:
+    /// variables into the destination resource.
+    /// <para>
+    /// Injects standalone environment variables:
     /// <list type="bullet">
-    ///   <item><description><c>STRIPE_SECRET_KEY</c> — the Stripe secret API key (if provided via <c>apiKey</c> or <c>WithApiKey</c>)</description></item>
+    ///   <item><description><c>STRIPE_SECRET_KEY</c> — the Stripe secret API key (if provided)</description></item>
     ///   <item><description><c>STRIPE_PUBLISHABLE_KEY</c> — the Stripe publishable key (if provided via <c>WithPublishableKey</c>)</description></item>
     ///   <item><description><c>STRIPE_WEBHOOK_SECRET</c> — the webhook signing secret captured from the CLI output at startup</description></item>
     /// </list>
+    /// </para>
+    /// <para>
+    /// Also injects variables in the format expected by <c>Stripe.Extensions.DependencyInjection</c>
+    /// (i.e., the <c>Stripe:{clientName}</c> configuration section via double-underscore env var syntax),
+    /// so that <c>services.AddStripe()</c> requires no additional configuration:
+    /// <list type="bullet">
+    ///   <item><description><c>Stripe__{clientName}__ApiKey</c></description></item>
+    ///   <item><description><c>Stripe__{clientName}__PublicKey</c> (if publishable key is provided)</description></item>
+    ///   <item><description><c>Stripe__{clientName}__WebhookSecret</c></description></item>
+    /// </list>
+    /// </para>
     /// </summary>
     /// <typeparam name="TDestination">The destination resource type.</typeparam>
     /// <typeparam name="TStripe">The Stripe CLI resource type.</typeparam>
     /// <param name="builder">The destination resource builder.</param>
     /// <param name="source">The Stripe CLI resource to reference.</param>
+    /// <param name="clientName">
+    /// The Stripe client name used as the configuration section key (e.g. <c>Stripe:{clientName}</c>).
+    /// Defaults to <c>"Default"</c>, matching the default used by <c>services.AddStripe()</c>.
+    /// </param>
     /// <returns>A reference to the <see cref="IResourceBuilder{TDestination}"/>.</returns>
     public static IResourceBuilder<TDestination> WithReference<TDestination, TStripe>(
         this IResourceBuilder<TDestination> builder,
-        IResourceBuilder<TStripe> source)
+        IResourceBuilder<TStripe> source,
+        string clientName = DefaultClientName)
         where TDestination : IResourceWithEnvironment
         where TStripe : IResource, IStripeCliResource
     {
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(source);
+        ArgumentException.ThrowIfNullOrEmpty(clientName);
 
         if (source.Resource.SecretKey is { } secretKey)
         {
+            // Standalone env var
             builder.WithEnvironment(context =>
                 context.EnvironmentVariables[SecretKeyEnvVar] = ReferenceExpression.Create($"{secretKey}"));
+
+            // Stripe.Extensions.DependencyInjection config section format: Stripe:{clientName}:ApiKey
+            builder.WithEnvironment(context =>
+                context.EnvironmentVariables[$"Stripe__{clientName}__ApiKey"] = ReferenceExpression.Create($"{secretKey}"));
         }
 
         if (source.Resource.PublishableKey is { } publishableKey)
         {
+            // Standalone env var
             builder.WithEnvironment(context =>
                 context.EnvironmentVariables[PublishableKeyEnvVar] = ReferenceExpression.Create($"{publishableKey}"));
+
+            // Stripe.Extensions.DependencyInjection config section format: Stripe:{clientName}:PublicKey
+            builder.WithEnvironment(context =>
+                context.EnvironmentVariables[$"Stripe__{clientName}__PublicKey"] = ReferenceExpression.Create($"{publishableKey}"));
         }
 
+        // Webhook signing secret — always injected (value is empty string until CLI starts)
+        builder.WithEnvironment(context =>
+            context.EnvironmentVariables[DefaultWebhookSecretEnvVar] = source.Resource.WebhookSigningSecret ?? string.Empty);
+
+        // Stripe.Extensions.DependencyInjection config section format: Stripe:{clientName}:WebhookSecret
         return builder.WithEnvironment(context =>
-        {
-            context.EnvironmentVariables[DefaultWebhookSecretEnvVar] = source.Resource.WebhookSigningSecret ?? string.Empty;
-        });
+            context.EnvironmentVariables[$"Stripe__{clientName}__WebhookSecret"] = source.Resource.WebhookSigningSecret ?? string.Empty);
     }
 
     private static void AppendListenOptions<T>(
