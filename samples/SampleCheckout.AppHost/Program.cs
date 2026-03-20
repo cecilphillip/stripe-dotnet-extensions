@@ -57,7 +57,7 @@ var stripeCli = builder.AddStripeCliContainer("stripe-cli", apiKey: stripeApiKey
 //
 // Standalone vars (for custom usage):
 //   STRIPE_SECRET_KEY      — the secret API key
-//   STRIPE_PUBLISHABLE_KEY — the publishable key (because WithPublishableKey was called)
+//   STRIPE_PUBLISHABLE_KEY — the publishable key (because publishableKey was provided)
 //   STRIPE_WEBHOOK_SECRET  — the signing secret captured from CLI output at startup
 //
 // Stripe.Extensions.DependencyInjection config-binding vars (default clientName = "Default"):

@@ -20,7 +20,7 @@ public interface IStripeCliResource : IResourceWithArgs
     ParameterResource? SecretKey { get; }
 
     /// <summary>
-    /// Gets the Stripe publishable key parameter, if one was provided via <c>WithPublishableKey</c>.
+    /// Gets the Stripe publishable key parameter, if one was provided via the <c>publishableKey</c> parameter on <c>AddStripeCli</c> or <c>AddStripeCliContainer</c>.
     /// Injected into dependent services as <c>STRIPE_PUBLISHABLE_KEY</c> by <c>WithReference</c>.
     /// </summary>
     ParameterResource? PublishableKey { get; }

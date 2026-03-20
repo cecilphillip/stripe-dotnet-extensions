@@ -89,16 +89,6 @@ api.WithReference(stripe);
 api.WithReference(stripe, envVarName: "MY_STRIPE_SECRET");
 ```
 
-## Passing the API key as a CLI argument
-
-In addition to the `STRIPE_API_KEY` environment variable set by `AddStripeCli`, you can also pass the key as a `--api-key` CLI argument:
-
-```csharp
-var stripe = builder.AddStripeCli("stripe", apiKey: stripeApiKey)
-    .WithApiKey(stripeApiKey)
-    .WithWebhookForwardTo(api);
-```
-
 ## How it works
 
 - **Local mode** (`AddStripeCli`): Runs `stripe listen --forward-to <url>` as a local process.

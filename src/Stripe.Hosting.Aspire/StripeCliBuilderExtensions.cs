@@ -256,50 +256,6 @@ public static class StripeCliBuilderExtensions
         return builder;
     }
 
-    /// <summary>
-    /// Adds the Stripe API key as a <c>--api-key</c> command-line argument to the Stripe CLI.
-    /// </summary>
-    /// <typeparam name="T">The Stripe CLI resource type.</typeparam>
-    /// <param name="builder">The Stripe CLI resource builder.</param>
-    /// <param name="apiKey">The parameter resource providing the Stripe API key.</param>
-    /// <returns>A reference to the <see cref="IResourceBuilder{T}"/>.</returns>
-    public static IResourceBuilder<T> WithApiKey<T>(
-        this IResourceBuilder<T> builder,
-        IResourceBuilder<ParameterResource> apiKey)
-        where T : IResource, IStripeCliResource
-    {
-        ArgumentNullException.ThrowIfNull(builder);
-        ArgumentNullException.ThrowIfNull(apiKey);
-
-        SetSecretKey(builder.Resource, apiKey.Resource);
-
-        return builder.WithArgs(context =>
-        {
-            context.Args.Add("--api-key");
-            context.Args.Add(apiKey.Resource);
-        });
-    }
-
-    /// <summary>
-    /// Stores the Stripe publishable key on the resource so it can be injected into
-    /// dependent services via <c>WithReference</c> as <c>STRIPE_PUBLISHABLE_KEY</c>.
-    /// </summary>
-    /// <typeparam name="T">The Stripe CLI resource type.</typeparam>
-    /// <param name="builder">The Stripe CLI resource builder.</param>
-    /// <param name="publishableKey">The parameter resource providing the Stripe publishable key.</param>
-    /// <returns>A reference to the <see cref="IResourceBuilder{T}"/>.</returns>
-    public static IResourceBuilder<T> WithPublishableKey<T>(
-        this IResourceBuilder<T> builder,
-        IResourceBuilder<ParameterResource> publishableKey)
-        where T : IResource, IStripeCliResource
-    {
-        ArgumentNullException.ThrowIfNull(builder);
-        ArgumentNullException.ThrowIfNull(publishableKey);
-
-        SetPublishableKey(builder.Resource, publishableKey.Resource);
-        return builder;
-    }
-
     private const string DefaultClientName = "Default";
 
     /// <summary>
@@ -309,7 +265,7 @@ public static class StripeCliBuilderExtensions
     /// Injects standalone environment variables:
     /// <list type="bullet">
     ///   <item><description><c>STRIPE_SECRET_KEY</c> — the Stripe secret API key (if provided)</description></item>
-    ///   <item><description><c>STRIPE_PUBLISHABLE_KEY</c> — the Stripe publishable key (if provided via <c>WithPublishableKey</c>)</description></item>
+    ///   <item><description><c>STRIPE_PUBLISHABLE_KEY</c> — the Stripe publishable key (if provided via <c>publishableKey</c> parameter)</description></item>
     ///   <item><description><c>STRIPE_WEBHOOK_SECRET</c> — the webhook signing secret captured from the CLI output at startup</description></item>
     /// </list>
     /// </para>
@@ -394,20 +350,6 @@ public static class StripeCliBuilderExtensions
         {
             builder.WithArgs("--skip-verify");
         }
-    }
-
-    // Interface properties are getter-only so callers outside the library cannot mutate them.
-    // These helpers let us set them from within the library by switching on the concrete type.
-    private static void SetSecretKey(IStripeCliResource resource, ParameterResource? key)
-    {
-        if (resource is StripeCliResource local) local.SecretKey = key;
-        else if (resource is StripeCliContainerResource container) container.SecretKey = key;
-    }
-
-    private static void SetPublishableKey(IStripeCliResource resource, ParameterResource? key)
-    {
-        if (resource is StripeCliResource local) local.PublishableKey = key;
-        else if (resource is StripeCliContainerResource container) container.PublishableKey = key;
     }
 
     private static string BuildForwardToUrl(IResource stripeResource, IResourceWithEndpoints targetResource, string webhookPath)

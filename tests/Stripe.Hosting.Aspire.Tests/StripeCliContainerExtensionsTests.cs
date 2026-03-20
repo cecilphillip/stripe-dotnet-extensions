@@ -187,25 +187,6 @@ public class StripeCliContainerExtensionsTests
     }
 
     [Fact]
-    public async Task WithApiKey_Container_AddsApiKeyArg()
-    {
-        var builder = DistributedApplication.CreateBuilder();
-        var apiKey = builder.AddParameter("api-key", TestApiKeyValue);
-
-        builder.AddStripeCliContainer("stripe")
-            .WithApiKey(apiKey);
-
-        using var app = builder.Build();
-        var appModel = app.Services.GetRequiredService<DistributedApplicationModel>();
-        var resource = Assert.Single(appModel.Resources.OfType<StripeCliContainerResource>());
-
-        var args = await resource.GetArgumentValuesAsync();
-
-        Assert.Contains("--api-key", args);
-        Assert.Contains(TestApiKeyValue, args);
-    }
-
-    [Fact]
     public void WebhookSigningSecret_InitiallyNull()
     {
         var builder = DistributedApplication.CreateBuilder();

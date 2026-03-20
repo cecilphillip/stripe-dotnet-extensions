@@ -210,41 +210,6 @@ public class StripeCliBuilderExtensionsTests
     }
 
     [Fact]
-    public async Task WithApiKey_AddsApiKeyArg()
-    {
-        var builder = DistributedApplication.CreateBuilder();
-        var apiKey = builder.AddParameter("api-key", TestApiKeyValue);
-
-        builder.AddStripeCli("stripe")
-            .WithApiKey(apiKey);
-
-        using var app = builder.Build();
-        var appModel = app.Services.GetRequiredService<DistributedApplicationModel>();
-        var resource = Assert.Single(appModel.Resources.OfType<StripeCliResource>());
-
-        var args = await resource.GetArgumentValuesAsync();
-
-        Assert.Contains("--api-key", args);
-        Assert.Contains(TestApiKeyValue, args);
-    }
-
-    [Fact]
-    public void WithApiKey_NullBuilder_Throws()
-    {
-        IResourceBuilder<StripeCliResource> builder = null!;
-        var apiKeyBuilder = DistributedApplication.CreateBuilder().AddParameter("key", "val");
-        Assert.Throws<ArgumentNullException>(() => builder.WithApiKey(apiKeyBuilder));
-    }
-
-    [Fact]
-    public void WithApiKey_NullKey_Throws()
-    {
-        var builder = DistributedApplication.CreateBuilder();
-        var stripe = builder.AddStripeCli("stripe");
-        Assert.Throws<ArgumentNullException>(() => stripe.WithApiKey(null!));
-    }
-
-    [Fact]
     public void WithReference_InjectsDefaultWebhookSecretEnvVar()
     {
         var builder = DistributedApplication.CreateBuilder();
@@ -355,29 +320,6 @@ public class StripeCliBuilderExtensionsTests
     {
         var resource = new StripeCliResource("test", "stripe", "/tmp");
         Assert.Null(resource.WebhookSigningSecret);
-    }
-
-    [Fact]
-    public void WithPublishableKey_StoresKeyOnResource()
-    {
-        var builder = DistributedApplication.CreateBuilder();
-        var pubKey = builder.AddParameter("pub-key", "pk_test_abc");
-
-        var stripe = builder.AddStripeCli("stripe")
-            .WithPublishableKey(pubKey);
-
-        Assert.NotNull(stripe.Resource.PublishableKey);
-        Assert.Equal("pk_test_abc", stripe.Resource.PublishableKey!.Value);
-    }
-
-    [Fact]
-    public void WithPublishableKey_NullKey_Throws()
-    {
-        var builder = DistributedApplication.CreateBuilder();
-        var stripe = builder.AddStripeCli("stripe");
-
-        Assert.Throws<ArgumentNullException>(() =>
-            stripe.WithPublishableKey(null!));
     }
 
     [Fact]
