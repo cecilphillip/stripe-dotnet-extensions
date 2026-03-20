@@ -1,0 +1,435 @@
+using Aspire.Hosting.ApplicationModel;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Stripe.Hosting.Aspire;
+
+// Extension methods go in Aspire.Hosting namespace so they are discovered automatically
+// when the Aspire.Hosting package is referenced, without needing an extra using directive.
+namespace Aspire.Hosting;
+
+/// <summary>
+/// Extension methods for adding Stripe CLI resources to a <see cref="IDistributedApplicationBuilder"/>.
+/// </summary>
+public static class StripeCliBuilderExtensions
+{
+    private const string DefaultWebhookPath = "/webhooks/stripe";
+    private const string DefaultConnectWebhookPath = "/webhooks/stripe-connect";
+    private const string DefaultWebhookSecretEnvVar = "STRIPE_WEBHOOK_SECRET";
+    private const string ApiKeyEnvVar = "STRIPE_API_KEY";
+
+    /// <summary>
+    /// Adds a locally installed Stripe CLI resource to the application model.
+    /// The <c>stripe</c> executable must be available in the system PATH or provided via <paramref name="stripePath"/>.
+    /// </summary>
+    /// <param name="builder">The <see cref="IDistributedApplicationBuilder"/>.</param>
+    /// <param name="name">The name of the resource.</param>
+    /// <param name="apiKey">Optional parameter resource providing the Stripe API key, exposed as <c>STRIPE_API_KEY</c>.</param>
+    /// <param name="stripePath">Optional path to the Stripe CLI executable. Defaults to <c>stripe</c> (resolved from PATH).</param>
+    /// <returns>A reference to the <see cref="IResourceBuilder{StripeCliResource}"/>.</returns>
+    public static IResourceBuilder<StripeCliResource> AddStripeCli(
+        this IDistributedApplicationBuilder builder,
+        [ResourceName] string name,
+        IResourceBuilder<ParameterResource>? apiKey = null,
+        string? stripePath = null)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentException.ThrowIfNullOrEmpty(name);
+
+        var command = stripePath ?? "stripe";
+        var resource = new StripeCliResource(name, command, builder.AppHostDirectory);
+
+        var resourceBuilder = builder.AddResource(resource)
+            .ExcludeFromManifest()
+            .WithArgs("listen");
+
+        if (apiKey is not null)
+        {
+            resourceBuilder.WithEnvironment(context =>
+                context.EnvironmentVariables[ApiKeyEnvVar] = ReferenceExpression.Create($"{apiKey.Resource}"));
+        }
+
+        return resourceBuilder;
+    }
+
+    /// <summary>
+    /// Adds a Stripe CLI Docker container resource to the application model.
+    /// Uses the official <c>stripe/stripe-cli</c> Docker image.
+    /// </summary>
+    /// <param name="builder">The <see cref="IDistributedApplicationBuilder"/>.</param>
+    /// <param name="name">The name of the resource.</param>
+    /// <param name="apiKey">Optional parameter resource providing the Stripe API key, exposed as <c>STRIPE_API_KEY</c>.</param>
+    /// <returns>A reference to the <see cref="IResourceBuilder{StripeCliContainerResource}"/>.</returns>
+    public static IResourceBuilder<StripeCliContainerResource> AddStripeCliContainer(
+        this IDistributedApplicationBuilder builder,
+        [ResourceName] string name,
+        IResourceBuilder<ParameterResource>? apiKey = null)
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentException.ThrowIfNullOrEmpty(name);
+
+        var resource = new StripeCliContainerResource(name);
+
+        var resourceBuilder = builder.AddResource(resource)
+            .WithImage(StripeCliContainerImageTags.Image, StripeCliContainerImageTags.Tag)
+            .WithImageRegistry(StripeCliContainerImageTags.Registry)
+            .ExcludeFromManifest()
+            .WithArgs("listen");
+
+        if (apiKey is not null)
+        {
+            resourceBuilder.WithEnvironment(context =>
+                context.EnvironmentVariables[ApiKeyEnvVar] = ReferenceExpression.Create($"{apiKey.Resource}"));
+        }
+
+        return resourceBuilder;
+    }
+
+    /// <summary>
+    /// Configures the Stripe CLI to listen for webhook events and forward them to the specified endpoint.
+    /// </summary>
+    /// <typeparam name="T">The Stripe CLI resource type.</typeparam>
+    /// <typeparam name="TTarget">The target resource type with endpoints.</typeparam>
+    /// <param name="builder">The Stripe CLI resource builder.</param>
+    /// <param name="forwardTo">The Aspire resource to forward webhook events to.</param>
+    /// <param name="webhookPath">The path on the target resource's endpoint. Defaults to <c>/webhooks/stripe</c>.</param>
+    /// <param name="events">Optional collection of specific event types to listen for. If not specified, all events are forwarded.</param>
+    /// <param name="skipVerify">When <c>true</c>, passes <c>--skip-verify</c> to skip SSL certificate verification.</param>
+    /// <returns>A reference to the <see cref="IResourceBuilder{T}"/>.</returns>
+    public static IResourceBuilder<T> WithWebhookForwardTo<T, TTarget>(
+        this IResourceBuilder<T> builder,
+        IResourceBuilder<TTarget> forwardTo,
+        string webhookPath = DefaultWebhookPath,
+        IEnumerable<string>? events = null,
+        bool skipVerify = false)
+        where T : IResource, IStripeCliResource
+        where TTarget : IResourceWithEndpoints
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentNullException.ThrowIfNull(forwardTo);
+
+        builder.WithArgs(context =>
+        {
+            context.Args.Add("--forward-to");
+            context.Args.Add(BuildForwardToUrl(forwardTo.Resource, webhookPath));
+        });
+
+        AppendListenOptions(builder, events, skipVerify);
+        return builder.EnsureWebhookSigningSecretResolver();
+    }
+
+    /// <summary>
+    /// Configures the Stripe CLI to listen for webhook events and forward them to multiple endpoints.
+    /// Each resource in <paramref name="forwardTo"/> generates a separate <c>--forward-to</c> flag.
+    /// </summary>
+    /// <typeparam name="T">The Stripe CLI resource type.</typeparam>
+    /// <param name="builder">The Stripe CLI resource builder.</param>
+    /// <param name="webhookPath">The path on each target resource's endpoint.</param>
+    /// <param name="forwardTo">One or more Aspire resources to forward webhook events to.</param>
+    /// <returns>A reference to the <see cref="IResourceBuilder{T}"/>.</returns>
+    public static IResourceBuilder<T> WithWebhookForwardTo<T>(
+        this IResourceBuilder<T> builder,
+        string webhookPath,
+        params IResourceBuilder<IResourceWithEndpoints>[] forwardTo)
+        where T : IResource, IStripeCliResource
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentException.ThrowIfNullOrEmpty(webhookPath);
+        ArgumentNullException.ThrowIfNull(forwardTo);
+
+        if (forwardTo.Length == 0)
+        {
+            throw new ArgumentException("At least one forward-to target must be specified.", nameof(forwardTo));
+        }
+
+        foreach (var target in forwardTo)
+        {
+            var capturedTarget = target;
+            builder.WithArgs(context =>
+            {
+                context.Args.Add("--forward-to");
+                context.Args.Add(BuildForwardToUrl(capturedTarget.Resource, webhookPath));
+            });
+        }
+
+        return builder.EnsureWebhookSigningSecretResolver();
+    }
+
+    /// <summary>
+    /// Configures the Stripe CLI to forward Stripe Connect webhook events to the specified endpoint
+    /// using <c>--forward-connect-to</c>.
+    /// </summary>
+    /// <typeparam name="T">The Stripe CLI resource type.</typeparam>
+    /// <typeparam name="TTarget">The target resource type with endpoints.</typeparam>
+    /// <param name="builder">The Stripe CLI resource builder.</param>
+    /// <param name="forwardTo">The Aspire resource to forward Connect webhook events to.</param>
+    /// <param name="webhookPath">The path on the target resource's endpoint. Defaults to <c>/webhooks/stripe-connect</c>.</param>
+    /// <returns>A reference to the <see cref="IResourceBuilder{T}"/>.</returns>
+    public static IResourceBuilder<T> WithWebhookConnectForwardTo<T, TTarget>(
+        this IResourceBuilder<T> builder,
+        IResourceBuilder<TTarget> forwardTo,
+        string webhookPath = DefaultConnectWebhookPath)
+        where T : IResource, IStripeCliResource
+        where TTarget : IResourceWithEndpoints
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentNullException.ThrowIfNull(forwardTo);
+
+        builder.WithArgs(context =>
+        {
+            context.Args.Add("--forward-connect-to");
+            context.Args.Add(BuildForwardToUrl(forwardTo.Resource, webhookPath));
+        });
+
+        return builder;
+    }
+
+    /// <summary>
+    /// Configures the Stripe CLI to forward Stripe Connect webhook events to multiple endpoints.
+    /// Each resource in <paramref name="forwardTo"/> generates a separate <c>--forward-connect-to</c> flag.
+    /// </summary>
+    /// <typeparam name="T">The Stripe CLI resource type.</typeparam>
+    /// <param name="builder">The Stripe CLI resource builder.</param>
+    /// <param name="webhookPath">The path on each target resource's endpoint.</param>
+    /// <param name="forwardTo">One or more Aspire resources to forward Connect webhook events to.</param>
+    /// <returns>A reference to the <see cref="IResourceBuilder{T}"/>.</returns>
+    public static IResourceBuilder<T> WithWebhookConnectForwardTo<T>(
+        this IResourceBuilder<T> builder,
+        string webhookPath,
+        params IResourceBuilder<IResourceWithEndpoints>[] forwardTo)
+        where T : IResource, IStripeCliResource
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentException.ThrowIfNullOrEmpty(webhookPath);
+        ArgumentNullException.ThrowIfNull(forwardTo);
+
+        if (forwardTo.Length == 0)
+        {
+            throw new ArgumentException("At least one forward-connect-to target must be specified.", nameof(forwardTo));
+        }
+
+        foreach (var target in forwardTo)
+        {
+            var capturedTarget = target;
+            builder.WithArgs(context =>
+            {
+                context.Args.Add("--forward-connect-to");
+                context.Args.Add(BuildForwardToUrl(capturedTarget.Resource, webhookPath));
+            });
+        }
+
+        return builder;
+    }
+
+    /// <summary>
+    /// Adds the Stripe API key as a <c>--api-key</c> command-line argument to the Stripe CLI.
+    /// </summary>
+    /// <typeparam name="T">The Stripe CLI resource type.</typeparam>
+    /// <param name="builder">The Stripe CLI resource builder.</param>
+    /// <param name="apiKey">The parameter resource providing the Stripe API key.</param>
+    /// <returns>A reference to the <see cref="IResourceBuilder{T}"/>.</returns>
+    public static IResourceBuilder<T> WithApiKey<T>(
+        this IResourceBuilder<T> builder,
+        IResourceBuilder<ParameterResource> apiKey)
+        where T : IResource, IStripeCliResource
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentNullException.ThrowIfNull(apiKey);
+
+        return builder.WithArgs(context =>
+        {
+            context.Args.Add("--api-key");
+            context.Args.Add(apiKey.Resource);
+        });
+    }
+
+    /// <summary>
+    /// Adds a reference to a Stripe CLI resource, injecting its webhook signing secret as an
+    /// environment variable into the destination resource.
+    /// </summary>
+    /// <typeparam name="TDestination">The destination resource type.</typeparam>
+    /// <typeparam name="TStripe">The Stripe CLI resource type.</typeparam>
+    /// <param name="builder">The destination resource builder.</param>
+    /// <param name="source">The Stripe CLI resource to reference.</param>
+    /// <param name="envVarName">
+    /// The name of the environment variable to inject the webhook signing secret into.
+    /// Defaults to <c>STRIPE_WEBHOOK_SECRET</c>.
+    /// </param>
+    /// <returns>A reference to the <see cref="IResourceBuilder{TDestination}"/>.</returns>
+    public static IResourceBuilder<TDestination> WithReference<TDestination, TStripe>(
+        this IResourceBuilder<TDestination> builder,
+        IResourceBuilder<TStripe> source,
+        string envVarName = DefaultWebhookSecretEnvVar)
+        where TDestination : IResourceWithEnvironment
+        where TStripe : IResource, IStripeCliResource
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentException.ThrowIfNullOrEmpty(envVarName);
+
+        return builder.WithEnvironment(context =>
+        {
+            context.EnvironmentVariables[envVarName] = source.Resource.WebhookSigningSecret ?? string.Empty;
+        });
+    }
+
+    private static void AppendListenOptions<T>(
+        IResourceBuilder<T> builder,
+        IEnumerable<string>? events,
+        bool skipVerify)
+        where T : IResource, IStripeCliResource
+    {
+        if (events is not null)
+        {
+            var eventList = string.Join(",", events);
+            if (!string.IsNullOrWhiteSpace(eventList))
+            {
+                builder.WithArgs("--events", eventList);
+            }
+        }
+
+        if (skipVerify)
+        {
+            builder.WithArgs("--skip-verify");
+        }
+    }
+
+    private static string BuildForwardToUrl(IResourceWithEndpoints resource, string webhookPath)
+    {
+        if (!resource.TryGetEndpoints(out var endpoints) || !endpoints.Any())
+        {
+            throw new InvalidOperationException(
+                $"The resource '{resource.Name}' does not have any endpoints defined. " +
+                "Ensure the resource has at least one endpoint configured before calling WithWebhookForwardTo.");
+        }
+
+        var allocatedEndpoint = endpoints.First().AllocatedEndpoint
+            ?? throw new InvalidOperationException(
+                $"The endpoint for resource '{resource.Name}' has not been allocated yet. " +
+                "Endpoint allocation occurs when the Aspire application host starts.");
+
+        var path = webhookPath.StartsWith('/') ? webhookPath : $"/{webhookPath}";
+        return $"{allocatedEndpoint}{path}";
+    }
+
+    // Sentinel annotation to ensure the log watcher is registered at most once per resource.
+    private sealed class StripeSecretResolverAnnotation : IResourceAnnotation { }
+
+    private static IResourceBuilder<T> EnsureWebhookSigningSecretResolver<T>(this IResourceBuilder<T> builder)
+        where T : IResource, IStripeCliResource
+    {
+        if (builder.Resource.Annotations.OfType<StripeSecretResolverAnnotation>().Any())
+        {
+            return builder;
+        }
+
+        builder.Resource.Annotations.Add(new StripeSecretResolverAnnotation());
+
+        // Register a health check that becomes healthy once the signing secret is captured from CLI output.
+        // This allows dependent resources to use WaitFor(stripeCli) to delay their start
+        // until the STRIPE_WEBHOOK_SECRET value is available.
+        var healthCheckKey = $"stripe.cli.webhook-secret.{builder.Resource.Name}";
+        builder.ApplicationBuilder.Services.AddHealthChecks()
+            .AddCheck(healthCheckKey, new StripeSigningSecretHealthCheck<T>(builder.Resource));
+        builder.WithHealthCheck(healthCheckKey);
+
+        builder.OnBeforeResourceStarted((resource, @event, ct) =>
+        {
+            return Task.Run(async () =>
+            {
+                var notificationService = @event.Services.GetRequiredService<ResourceNotificationService>();
+                var loggerService = @event.Services.GetRequiredService<ResourceLoggerService>();
+
+                await foreach (var resourceEvent in notificationService.WatchAsync(ct).ConfigureAwait(false))
+                {
+                    if (!string.Equals(resource.Name, resourceEvent.Resource.Name, StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    _ = WatchResourceLogsAsync(resource, resourceEvent.ResourceId, loggerService, ct);
+                    break;
+                }
+            }, ct);
+        });
+
+        return builder;
+    }
+
+    private static async Task WatchResourceLogsAsync<T>(
+        T resource,
+        string resourceId,
+        ResourceLoggerService loggerService,
+        CancellationToken cancellationToken)
+        where T : IResource, IStripeCliResource
+    {
+        try
+        {
+            await foreach (var logBatch in loggerService.WatchAsync(resourceId).WithCancellation(cancellationToken).ConfigureAwait(false))
+            {
+                foreach (var line in logBatch.Where(l => !string.IsNullOrWhiteSpace(l.Content)))
+                {
+                    if (TryExtractSigningSecret(line.Content, out var signingSecret))
+                    {
+                        if (resource is StripeCliResource localResource)
+                        {
+                            localResource.WebhookSigningSecret = signingSecret;
+                        }
+                        else if (resource is StripeCliContainerResource containerResource)
+                        {
+                            containerResource.WebhookSigningSecret = signingSecret;
+                        }
+                        return;
+                    }
+                }
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Expected during shutdown.
+        }
+    }
+
+    private static bool TryExtractSigningSecret(string? content, out string? secret)
+    {
+        secret = null;
+
+        if (string.IsNullOrWhiteSpace(content))
+        {
+            return false;
+        }
+
+        const string Prefix = "whsec_";
+        var startIndex = content.IndexOf(Prefix, StringComparison.OrdinalIgnoreCase);
+        if (startIndex < 0)
+        {
+            return false;
+        }
+
+        var endIndex = startIndex + Prefix.Length;
+        while (endIndex < content.Length && IsSecretCharacter(content[endIndex]))
+        {
+            endIndex++;
+        }
+
+        var candidate = content[startIndex..endIndex].TrimEnd('.', ';', ',', ')', '"');
+
+        if (candidate.Length <= Prefix.Length)
+        {
+            return false;
+        }
+
+        secret = candidate;
+        return true;
+
+        static bool IsSecretCharacter(char c) => char.IsLetterOrDigit(c) || c is '_' or '-';
+    }
+
+    private sealed class StripeSigningSecretHealthCheck<T>(T resource) : IHealthCheck
+        where T : IStripeCliResource
+    {
+        public Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default) =>
+            Task.FromResult(resource.WebhookSigningSecret is not null
+                ? HealthCheckResult.Healthy("Webhook signing secret is available.")
+                : HealthCheckResult.Unhealthy("Waiting for webhook signing secret from Stripe CLI."));
+    }
+}
