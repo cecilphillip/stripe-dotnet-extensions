@@ -2,6 +2,7 @@ using Aspire.Hosting.ApplicationModel;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Stripe.Hosting.Aspire;
+using System.Runtime.InteropServices;
 
 // Extension methods go in Aspire.Hosting namespace so they are discovered automatically
 // when the Aspire.Hosting package is referenced, without needing an extra using directive.
@@ -16,6 +17,12 @@ public static class StripeCliBuilderExtensions
     private const string DefaultConnectWebhookPath = "/webhooks/stripe-connect";
     private const string DefaultWebhookSecretEnvVar = "STRIPE_WEBHOOK_SECRET";
     private const string ApiKeyEnvVar = "STRIPE_API_KEY";
+
+    // On Docker Desktop (Windows/macOS), host.docker.internal resolves to the host machine.
+    // On Linux, host.docker.internal is not set up automatically; we add --add-host instead.
+    private static readonly bool IsDockerDesktop =
+        RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ||
+        RuntimeInformation.IsOSPlatform(OSPlatform.OSX);
 
     /// <summary>
     /// Adds a locally installed Stripe CLI resource to the application model.
@@ -75,6 +82,14 @@ public static class StripeCliBuilderExtensions
             .ExcludeFromManifest()
             .WithArgs("listen");
 
+        // On Linux, host.docker.internal is not automatically defined in containers.
+        // Adding --add-host makes host.docker.internal resolve to the host gateway,
+        // allowing the container to reach host-bound processes (projects run via dotnet run).
+        if (!IsDockerDesktop)
+        {
+            resourceBuilder.WithContainerRuntimeArgs("--add-host", "host.docker.internal:host-gateway");
+        }
+
         if (apiKey is not null)
         {
             resourceBuilder.WithEnvironment(context =>
@@ -107,10 +122,11 @@ public static class StripeCliBuilderExtensions
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(forwardTo);
 
+        var stripeResource = builder.Resource;
         builder.WithArgs(context =>
         {
             context.Args.Add("--forward-to");
-            context.Args.Add(BuildForwardToUrl(forwardTo.Resource, webhookPath));
+            context.Args.Add(BuildForwardToUrl(stripeResource, forwardTo.Resource, webhookPath));
         });
 
         AppendListenOptions(builder, events, skipVerify);
@@ -141,13 +157,14 @@ public static class StripeCliBuilderExtensions
             throw new ArgumentException("At least one forward-to target must be specified.", nameof(forwardTo));
         }
 
+        var stripeResource = builder.Resource;
         foreach (var target in forwardTo)
         {
             var capturedTarget = target;
             builder.WithArgs(context =>
             {
                 context.Args.Add("--forward-to");
-                context.Args.Add(BuildForwardToUrl(capturedTarget.Resource, webhookPath));
+                context.Args.Add(BuildForwardToUrl(stripeResource, capturedTarget.Resource, webhookPath));
             });
         }
 
@@ -174,10 +191,11 @@ public static class StripeCliBuilderExtensions
         ArgumentNullException.ThrowIfNull(builder);
         ArgumentNullException.ThrowIfNull(forwardTo);
 
+        var stripeResource = builder.Resource;
         builder.WithArgs(context =>
         {
             context.Args.Add("--forward-connect-to");
-            context.Args.Add(BuildForwardToUrl(forwardTo.Resource, webhookPath));
+            context.Args.Add(BuildForwardToUrl(stripeResource, forwardTo.Resource, webhookPath));
         });
 
         return builder;
@@ -207,13 +225,14 @@ public static class StripeCliBuilderExtensions
             throw new ArgumentException("At least one forward-connect-to target must be specified.", nameof(forwardTo));
         }
 
+        var stripeResource = builder.Resource;
         foreach (var target in forwardTo)
         {
             var capturedTarget = target;
             builder.WithArgs(context =>
             {
                 context.Args.Add("--forward-connect-to");
-                context.Args.Add(BuildForwardToUrl(capturedTarget.Resource, webhookPath));
+                context.Args.Add(BuildForwardToUrl(stripeResource, capturedTarget.Resource, webhookPath));
             });
         }
 
@@ -293,22 +312,40 @@ public static class StripeCliBuilderExtensions
         }
     }
 
-    private static string BuildForwardToUrl(IResourceWithEndpoints resource, string webhookPath)
+    private static string BuildForwardToUrl(IResource stripeResource, IResourceWithEndpoints targetResource, string webhookPath)
     {
-        if (!resource.TryGetEndpoints(out var endpoints) || !endpoints.Any())
+        if (!targetResource.TryGetEndpoints(out var endpoints) || !endpoints.Any())
         {
             throw new InvalidOperationException(
-                $"The resource '{resource.Name}' does not have any endpoints defined. " +
+                $"The resource '{targetResource.Name}' does not have any endpoints defined. " +
                 "Ensure the resource has at least one endpoint configured before calling WithWebhookForwardTo.");
         }
 
         var allocatedEndpoint = endpoints.First().AllocatedEndpoint
             ?? throw new InvalidOperationException(
-                $"The endpoint for resource '{resource.Name}' has not been allocated yet. " +
+                $"The endpoint for resource '{targetResource.Name}' has not been allocated yet. " +
                 "Endpoint allocation occurs when the Aspire application host starts.");
 
         var path = webhookPath.StartsWith('/') ? webhookPath : $"/{webhookPath}";
-        return $"{allocatedEndpoint}{path}";
+
+        // When the Stripe CLI runs as a Docker container and the target is a host-bound process
+        // (not a container), 'localhost' inside the container refers to the container's own
+        // loopback rather than the host machine. We must rewrite the host to reach the host machine:
+        //   - Docker Desktop (Windows/macOS): use host.docker.internal (resolved automatically)
+        //   - Linux: use host.docker.internal too — we add --add-host=host.docker.internal:host-gateway
+        //            to the container args in AddStripeCliContainer for Linux hosts
+        if (stripeResource is StripeCliContainerResource && targetResource is not ContainerResource)
+        {
+            var isLocalhost = allocatedEndpoint.Address.Equals("localhost", StringComparison.OrdinalIgnoreCase)
+                || allocatedEndpoint.Address.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase);
+
+            if (isLocalhost)
+            {
+                return $"{allocatedEndpoint.UriScheme}://host.docker.internal:{allocatedEndpoint.Port}{path}";
+            }
+        }
+
+        return $"{allocatedEndpoint.UriString}{path}";
     }
 
     // Sentinel annotation to ensure the log watcher is registered at most once per resource.

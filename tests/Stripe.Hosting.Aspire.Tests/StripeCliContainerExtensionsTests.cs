@@ -1,6 +1,7 @@
 using Aspire.Hosting;
 using Aspire.Hosting.ApplicationModel;
 using Microsoft.Extensions.DependencyInjection;
+using System.Runtime.InteropServices;
 using Xunit;
 
 namespace Stripe.Hosting.Aspire.Tests;
@@ -229,5 +230,43 @@ public class StripeCliContainerExtensionsTests
     {
         var resource = new StripeCliResource("test", "stripe", "/tmp");
         Assert.IsAssignableFrom<IStripeCliResource>(resource);
+    }
+
+    [Fact]
+    public void AddStripeCliContainer_OnLinux_AddsHostGatewayArg()
+    {
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) || RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+        {
+            return; // --add-host is only injected on Linux
+        }
+
+        var builder = DistributedApplication.CreateBuilder();
+        builder.AddStripeCliContainer("stripe");
+
+        using var app = builder.Build();
+        var appModel = app.Services.GetRequiredService<DistributedApplicationModel>();
+        var resource = Assert.Single(appModel.Resources.OfType<StripeCliContainerResource>());
+
+        var runtimeArgs = resource.Annotations.OfType<ContainerRuntimeArgsCallbackAnnotation>();
+        Assert.NotEmpty(runtimeArgs);
+    }
+
+    [Fact]
+    public void AddStripeCliContainer_OnDockerDesktop_DoesNotAddHostGatewayArg()
+    {
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows) && !RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+        {
+            return; // Only Docker Desktop platforms skip --add-host
+        }
+
+        var builder = DistributedApplication.CreateBuilder();
+        builder.AddStripeCliContainer("stripe");
+
+        using var app = builder.Build();
+        var appModel = app.Services.GetRequiredService<DistributedApplicationModel>();
+        var resource = Assert.Single(appModel.Resources.OfType<StripeCliContainerResource>());
+
+        var runtimeArgs = resource.Annotations.OfType<ContainerRuntimeArgsCallbackAnnotation>();
+        Assert.Empty(runtimeArgs);
     }
 }
