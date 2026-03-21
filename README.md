@@ -7,8 +7,9 @@
 The Stripe .NET Extension packages provide a collection of convenient features 
 to help improve the experience integrating Stripe in .NET applications. 
 
-- Stripe.Extensions.DependencyInjection - provides configuration and dependency injection support for the [Stripe .NET SDK](https://github.com/stripe/stripe-dotnet).
-- Stripe.Extensions.AspNetCore - provides webhook handling helpers for Stripe [events](https://docs.stripe.com/api/events/types) in ASP.NET Core applications.
+- **Stripe.Extensions.DependencyInjection** — configuration and dependency injection support for the [Stripe .NET SDK](https://github.com/stripe/stripe-dotnet).
+- **Stripe.Extensions.AspNetCore** — webhook handling helpers for Stripe [events](https://docs.stripe.com/api/events/types) in ASP.NET Core applications.
+- **Stripe.Hosting.Aspire** — [.NET Aspire](https://learn.microsoft.com/dotnet/aspire) hosting integration for the Stripe CLI, enabling local webhook forwarding during development.
 
 
 ## Install
@@ -16,6 +17,9 @@ to help improve the experience integrating Stripe in .NET applications.
 ```shell
 dotnet add package Stripe.Extensions.DependencyInjection
 dotnet add package Stripe.Extensions.AspNetCore
+
+# For Aspire AppHost projects
+dotnet add package Stripe.Hosting.Aspire
 ```
 
 ## Building Locally
@@ -313,6 +317,120 @@ public async Task UpdatesCustomerOnCreation()
 }
 ```
 
+## .NET Aspire Integration
+
+`Stripe.Hosting.Aspire` adds the Stripe CLI to your Aspire AppHost so it automatically forwards webhook events to your local services during development. It supports two modes: a **locally installed Stripe CLI** or the official **Docker image**.
+
+### Prerequisites
+
+**Local CLI mode**: Install the [Stripe CLI](https://docs.stripe.com/stripe-cli) and run `stripe login` once.
+
+**Docker container mode**: Docker must be running. No local Stripe CLI installation required.
+
+### Install
+
+In your AppHost project:
+
+```shell
+dotnet add package Stripe.Hosting.Aspire
+```
+
+### Quick start
+
+Store your Stripe API keys as user secrets in the AppHost project:
+
+```shell
+dotnet user-secrets set "Parameters:stripe-api-key"         "sk_test_..."
+dotnet user-secrets set "Parameters:stripe-publishable-key" "pk_test_..."
+```
+
+Then wire up the Stripe CLI in your AppHost:
+
+```csharp
+var builder = DistributedApplication.CreateBuilder(args);
+
+var stripeApiKey        = builder.AddParameter("stripe-api-key",         secret: true);
+var stripePublishableKey = builder.AddParameter("stripe-publishable-key", secret: false);
+
+var api = builder.AddProject<Projects.MyApi>("api");
+
+// Docker container mode (no local Stripe CLI required)
+var stripeCli = builder.AddStripeCliContainer("stripe-cli",
+        apiKey: stripeApiKey,
+        publishableKey: stripePublishableKey)
+    .WithWebhookForwardTo(api, webhookPath: "/webhooks/stripe");
+
+// WaitFor ensures the api starts only after the signing secret is captured
+api.WithReference(stripeCli)
+   .WaitFor(stripeCli);
+
+builder.Build().Run();
+```
+
+Switch to the locally installed CLI by replacing `AddStripeCliContainer` with `AddStripeCli`:
+
+```csharp
+var stripeCli = builder.AddStripeCli("stripe-cli",
+        apiKey: stripeApiKey,
+        publishableKey: stripePublishableKey)
+    .WithWebhookForwardTo(api, webhookPath: "/webhooks/stripe");
+```
+
+### Injected environment variables
+
+`WithReference(stripeCli)` injects the following environment variables into the dependent service, covering both standalone usage and zero-config `services.AddStripe()`:
+
+| Environment variable | Config path (`Stripe:Default:*`) | Value |
+|---|---|---|
+| `STRIPE_SECRET_KEY` | `Stripe__Default__ApiKey` | Secret API key |
+| `STRIPE_PUBLISHABLE_KEY` | `Stripe__Default__PublicKey` | Publishable key |
+| `STRIPE_WEBHOOK_SECRET` | `Stripe__Default__WebhookSecret` | Signing secret from CLI output |
+
+Because the `Stripe__Default__*` variables map directly to the `Stripe:Default` configuration section, calling `services.AddStripe()` in the dependent service requires **no additional configuration** — all values are supplied automatically at startup.
+
+To target a named client (e.g. `services.AddStripe("payments")`), pass the client name:
+
+```csharp
+api.WithReference(stripeCli, clientName: "payments");
+// injects Stripe__payments__ApiKey, Stripe__payments__WebhookSecret, etc.
+```
+
+### Forwarding to multiple services
+
+```csharp
+var stripeCli = builder.AddStripeCliContainer("stripe-cli", apiKey: stripeApiKey)
+    .WithWebhookForwardTo("/webhooks/stripe", api, paymentsService, notificationsService);
+```
+
+### Stripe Connect webhooks
+
+```csharp
+var stripeCli = builder.AddStripeCliContainer("stripe-cli", apiKey: stripeApiKey)
+    .WithWebhookForwardTo(api, webhookPath: "/webhooks/stripe")
+    .WithWebhookConnectForwardTo(api, webhookPath: "/webhooks/stripe-connect");
+```
+
+### Filtering events
+
+```csharp
+var stripeCli = builder.AddStripeCliContainer("stripe-cli", apiKey: stripeApiKey)
+    .WithWebhookForwardTo(api, webhookPath: "/webhooks/stripe",
+        events: ["payment_intent.succeeded", "customer.created"]);
+```
+
+### How it works
+
+1. The Stripe CLI starts with `stripe listen --forward-to <url>` (local mode) or as a Docker container (container mode).
+2. The integration watches the CLI stdout for the `whsec_...` signing secret printed at startup.
+3. Once captured, a health check on the `stripe-cli` resource transitions to **Healthy**.
+4. `WaitFor(stripeCli)` holds the dependent service until the health check passes, guaranteeing `STRIPE_WEBHOOK_SECRET` is populated before the service starts.
+5. On **macOS/Windows** (Docker Desktop), `localhost` in `--forward-to` URLs is automatically rewritten to `host.docker.internal`. On **Linux**, `--add-host=host.docker.internal:host-gateway` is injected into the container runtime args.
+
+### Additional Information
+
+- [Stripe CLI documentation](https://docs.stripe.com/stripe-cli)
+- [Testing webhooks locally](https://docs.stripe.com/webhooks/test)
+- [.NET Aspire documentation](https://learn.microsoft.com/dotnet/aspire)
 
 ### Useful links
 - [Stripe.NET](https://github.com/stripe/stripe-dotnet)
