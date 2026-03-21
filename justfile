@@ -152,35 +152,53 @@ pack: clean build
         --no-build \
         --output {{ PACKAGES_DIR }} \
         -p:Version={{ version }} \
-        -p:RepositoryUrl="https://github.com/cecilphillip-stripe/stripe-dotnet-extensions"
+        -p:RepositoryUrl="https://github.com/cecilphillip/stripe-dotnet-extensions"
     @echo ""
     @echo "✓ Packages created:"
     @ls -lh {{ PACKAGES_DIR }}/*.nupkg || true
 
-# Publish packages to NuGet.org (requires NUGET_API_KEY environment variable)
+# Publish packages to NuGet.org — builds first (requires NUGET_API_KEY environment variable)
 publish-nuget: pack
-    @echo "Publishing to NuGet.org..."
-    @if [ -z "$${NUGET_API_KEY:-}" ]; then \
-        echo "❌ NUGET_API_KEY environment variable is not set"; \
-        exit 1; \
-    fi
-    @dotnet nuget push {{ PACKAGES_DIR }}/*.nupkg \
-        --source https://api.nuget.org/v3/index.json \
-        --api-key "$${NUGET_API_KEY}" \
-        --skip-duplicate
-    @echo "✓ Packages published to NuGet.org"
+    @just -q push-nuget
 
-# Publish packages to GitHub Package Registry (requires NUGET_GITHUB_TOKEN environment variable)
-publish-github: pack
-    @echo "Publishing to GitHub Package Registry..."
-    @if [ -z "$${NUGET_GITHUB_TOKEN:-}" ]; then \
-        echo "❌ NUGET_GITHUB_TOKEN environment variable is not set"; \
-        exit 1; \
+# Push already-built packages to NuGet.org — skips pack (requires NUGET_API_KEY environment variable)
+push-nuget:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "Publishing to NuGet.org..."
+    if [ -z "${NUGET_API_KEY:-}" ]; then
+        echo "❌ NUGET_API_KEY environment variable is not set"
+        exit 1
     fi
-    @dotnet nuget push {{ PACKAGES_DIR }}/*.nupkg \
-        --source https://nuget.pkg.github.com/cecilphillip-stripe/index.json \
-        --api-key "$${NUGET_GITHUB_TOKEN}"
-    @echo "✓ Packages published to GitHub"
+    # dotnet nuget push automatically uploads the matching .snupkg alongside each .nupkg
+    for pkg in {{ PACKAGES_DIR }}/*.nupkg; do
+        dotnet nuget push "$pkg" \
+            --source https://api.nuget.org/v3/index.json \
+            --api-key "${NUGET_API_KEY}" \
+            --skip-duplicate
+    done
+    echo "✓ Packages published to NuGet.org"
+
+# Publish packages to GitHub Package Registry — builds first (requires NUGET_GITHUB_TOKEN environment variable)
+publish-github: pack
+    @just -q push-github
+
+# Push already-built packages to GitHub Package Registry — skips pack (requires NUGET_GITHUB_TOKEN environment variable)
+push-github:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    echo "Publishing to GitHub Package Registry..."
+    if [ -z "${NUGET_GITHUB_TOKEN:-}" ]; then
+        echo "❌ NUGET_GITHUB_TOKEN environment variable is not set"
+        exit 1
+    fi
+    for pkg in {{ PACKAGES_DIR }}/*.nupkg; do
+        dotnet nuget push "$pkg" \
+            --source https://nuget.pkg.github.com/cecilphillip-stripe/index.json \
+            --api-key "${NUGET_GITHUB_TOKEN}" \
+            --skip-duplicate
+    done
+    echo "✓ Packages published to GitHub"
 
 # ==============================================================================
 # CONTINUOUS INTEGRATION / SHORTCUTS
