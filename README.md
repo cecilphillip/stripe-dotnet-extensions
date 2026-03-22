@@ -68,13 +68,6 @@ Using `Stripe.Extensions.DependencyInjection` you can register named and unnamed
 The StripClient service is registered as scoped. 
 
 ```csharp
-// Startup-based apps
-public void ConfigureServices(IServiceCollection services)
-{
-    services.AddStripe();
-}
-
-// Minimal API based apps
 builder.Services.AddStripe();
 ```
 
@@ -162,9 +155,9 @@ Retrieving a client registered with `AddStripe("client1")`:
 ```csharp
 public class HomeController : Controller
 {
-    private readonly IStripeClient _stripeClient;
+    private readonly StripeClient _stripeClient;
 
-    public HomeController([FromKeyedServices("client1")]IStripeClient stripeClient)
+    public HomeController([FromKeyedServices("client1")] StripeClient stripeClient)
     {
         _stripeClient = stripeClient;
     }
@@ -200,13 +193,6 @@ access to `StripeClient`, the configured `StripeOptions` and an instance of `ILo
 The last step is to register the webhook handler with ASP.NET Core routing by calling `MapStripeWebhookHandler`.
 
 ```csharp
-// Startup-based apps
-public void Configure(IApplicationBuilder app)
-{
-    app.UseEndpoints(b => b.MapStripeWebhookHandler<MyWebhookHandler>());
-}
-
-// Minimal API based apps
 app.MapStripeWebhookHandler<MyWebhookHandler>();
 ```
 
