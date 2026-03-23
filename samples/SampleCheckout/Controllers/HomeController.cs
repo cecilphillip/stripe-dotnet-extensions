@@ -4,18 +4,12 @@ using Stripe;
 
 namespace SampleCheckout.Controllers;
 
-public class HomeController : Controller
+public class HomeController([FromKeyedServices("ProductsReadOnly")] StripeClient stripeClient)
+    : Controller
 {
-    private readonly StripeClient _stripeClient;
-
-    public HomeController([FromKeyedServices("ProductsReadOnly")]StripeClient stripeClient)
-    {
-        _stripeClient = stripeClient;
-    }
-
     public async Task<IActionResult> Index()
     {
-        var products = await _stripeClient.V1.Products.ListAsync(new()
+        var products = await stripeClient.V1.Products.ListAsync(new()
         {
             Limit = 10,
             Expand = ["data.default_price"]

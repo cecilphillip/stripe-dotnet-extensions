@@ -20,7 +20,7 @@ var builder = DistributedApplication.CreateBuilder(args);
 // Store your Stripe test keys with user secrets (from the AppHost directory):
 //   dotnet user-secrets set "Parameters:stripe-api-key"        "sk_test_..."
 //   dotnet user-secrets set "Parameters:stripe-publishable-key" "pk_test_..."
-var stripeApiKey        = builder.AddParameter("stripe-api-key",        secret: true);
+var stripeApiKey = builder.AddParameter("stripe-api-key", secret: true);
 var stripePublishableKey = builder.AddParameter("stripe-publishable-key", secret: false);
 
 // ---------------------------------------------------------------------------
@@ -72,6 +72,6 @@ var stripeCli = builder.AddStripeCliContainer("stripe-cli", apiKey: stripeApiKey
 // preventing STRIPE_WEBHOOK_SECRET from being empty on first start.
 
 checkout.WithReference(stripeCli)
-        .WaitFor(stripeCli);
+    .WaitFor(stripeCli);
 
 builder.Build().Run();
