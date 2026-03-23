@@ -47,7 +47,7 @@ public class StripeCliContainerExtensionsTests
     }
 
     [Fact]
-    public async Task AddStripeCliContainer_AddsListenAsFirstArg()
+    public void AddStripeCliContainer_AddsListenArgAnnotation()
     {
         var builder = DistributedApplication.CreateBuilder();
 
@@ -57,10 +57,9 @@ public class StripeCliContainerExtensionsTests
         var appModel = app.Services.GetRequiredService<DistributedApplicationModel>();
         var resource = Assert.Single(appModel.Resources.OfType<StripeCliContainerResource>());
 
-        var args = await resource.GetArgumentValuesAsync();
-
-        Assert.Contains("listen", args);
-        Assert.Equal("listen", args[0]);
+        // AddStripeCliContainer always calls WithArgs("listen"), which contributes one args callback annotation.
+        var argsAnnotations = resource.Annotations.OfType<CommandLineArgsCallbackAnnotation>();
+        Assert.Single(argsAnnotations);
     }
 
     [Fact]

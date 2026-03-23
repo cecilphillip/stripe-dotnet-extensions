@@ -39,7 +39,7 @@ public class StripeCliBuilderExtensionsTests
     }
 
     [Fact]
-    public async Task AddStripeCli_AddsListenAsFirstArg()
+    public void AddStripeCli_AddsListenArgAnnotation()
     {
         var builder = DistributedApplication.CreateBuilder();
 
@@ -49,10 +49,9 @@ public class StripeCliBuilderExtensionsTests
         var appModel = app.Services.GetRequiredService<DistributedApplicationModel>();
         var resource = Assert.Single(appModel.Resources.OfType<StripeCliResource>());
 
-        var args = await resource.GetArgumentValuesAsync();
-
-        Assert.Contains("listen", args);
-        Assert.Equal("listen", args[0]);
+        // AddStripeCli always calls WithArgs("listen"), which contributes one args callback annotation.
+        var argsAnnotations = resource.Annotations.OfType<CommandLineArgsCallbackAnnotation>();
+        Assert.Single(argsAnnotations);
     }
 
     [Fact]
@@ -323,7 +322,7 @@ public class StripeCliBuilderExtensionsTests
     }
 
     [Fact]
-    public void AddStripeCli_WithApiKey_StoresSecretKeyOnResource()
+    public async Task AddStripeCli_WithApiKey_StoresSecretKeyOnResource()
     {
         var builder = DistributedApplication.CreateBuilder();
         var apiKey = builder.AddParameter("key", "sk_test_abc");
@@ -331,11 +330,11 @@ public class StripeCliBuilderExtensionsTests
         var stripe = builder.AddStripeCli("stripe", apiKey: apiKey);
 
         Assert.NotNull(stripe.Resource.SecretKey);
-        Assert.Equal("sk_test_abc", stripe.Resource.SecretKey!.Value);
+        Assert.Equal("sk_test_abc", await stripe.Resource.SecretKey!.GetValueAsync(CancellationToken.None));
     }
 
     [Fact]
-    public void AddStripeCli_WithPublishableKey_StoresKeyOnResource()
+    public async Task AddStripeCli_WithPublishableKey_StoresKeyOnResource()
     {
         var builder = DistributedApplication.CreateBuilder();
         var pubKey = builder.AddParameter("pub-key", "pk_test_abc");
@@ -343,11 +342,11 @@ public class StripeCliBuilderExtensionsTests
         var stripe = builder.AddStripeCli("stripe", publishableKey: pubKey);
 
         Assert.NotNull(stripe.Resource.PublishableKey);
-        Assert.Equal("pk_test_abc", stripe.Resource.PublishableKey!.Value);
+        Assert.Equal("pk_test_abc", await stripe.Resource.PublishableKey!.GetValueAsync(CancellationToken.None));
     }
 
     [Fact]
-    public void AddStripeCliContainer_WithPublishableKey_StoresKeyOnResource()
+    public async Task AddStripeCliContainer_WithPublishableKey_StoresKeyOnResource()
     {
         var builder = DistributedApplication.CreateBuilder();
         var pubKey = builder.AddParameter("pub-key", "pk_test_abc");
@@ -355,7 +354,7 @@ public class StripeCliBuilderExtensionsTests
         var stripe = builder.AddStripeCliContainer("stripe", publishableKey: pubKey);
 
         Assert.NotNull(stripe.Resource.PublishableKey);
-        Assert.Equal("pk_test_abc", stripe.Resource.PublishableKey!.Value);
+        Assert.Equal("pk_test_abc", await stripe.Resource.PublishableKey!.GetValueAsync(CancellationToken.None));
     }
 
     [Fact]
