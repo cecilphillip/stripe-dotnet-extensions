@@ -56,7 +56,10 @@ public static class StripeCliBuilderExtensions
         {
             resource.SecretKey = apiKey.Resource;
             resourceBuilder.WithEnvironment(context =>
-                context.EnvironmentVariables[ApiKeyEnvVar] = ReferenceExpression.Create($"{apiKey.Resource}"));
+            {
+                context.EnvironmentVariables[ApiKeyEnvVar] = ReferenceExpression.Create($"{apiKey.Resource}");
+                return Task.CompletedTask;
+            });
         }
 
         if (publishableKey is not null)
@@ -105,7 +108,10 @@ public static class StripeCliBuilderExtensions
         {
             resource.SecretKey = apiKey.Resource;
             resourceBuilder.WithEnvironment(context =>
-                context.EnvironmentVariables[ApiKeyEnvVar] = ReferenceExpression.Create($"{apiKey.Resource}"));
+            {
+                context.EnvironmentVariables[ApiKeyEnvVar] = ReferenceExpression.Create($"{apiKey.Resource}");
+                return Task.CompletedTask;
+            });
         }
 
         if (publishableKey is not null)
@@ -304,31 +310,49 @@ public static class StripeCliBuilderExtensions
         {
             // Standalone env var
             builder.WithEnvironment(context =>
-                context.EnvironmentVariables[SecretKeyEnvVar] = ReferenceExpression.Create($"{secretKey}"));
+            {
+                context.EnvironmentVariables[SecretKeyEnvVar] = ReferenceExpression.Create($"{secretKey}");
+                return Task.CompletedTask;
+            });
 
             // Stripe.Extensions.DependencyInjection config section format: Stripe:{clientName}:ApiKey
             builder.WithEnvironment(context =>
-                context.EnvironmentVariables[$"Stripe__{clientName}__ApiKey"] = ReferenceExpression.Create($"{secretKey}"));
+            {
+                context.EnvironmentVariables[$"Stripe__{clientName}__ApiKey"] = ReferenceExpression.Create($"{secretKey}");
+                return Task.CompletedTask;
+            });
         }
 
         if (source.Resource.PublishableKey is { } publishableKey)
         {
             // Standalone env var
             builder.WithEnvironment(context =>
-                context.EnvironmentVariables[PublishableKeyEnvVar] = ReferenceExpression.Create($"{publishableKey}"));
+            {
+                context.EnvironmentVariables[PublishableKeyEnvVar] = ReferenceExpression.Create($"{publishableKey}");
+                return Task.CompletedTask;
+            });
 
             // Stripe.Extensions.DependencyInjection config section format: Stripe:{clientName}:PublicKey
             builder.WithEnvironment(context =>
-                context.EnvironmentVariables[$"Stripe__{clientName}__PublicKey"] = ReferenceExpression.Create($"{publishableKey}"));
+            {
+                context.EnvironmentVariables[$"Stripe__{clientName}__PublicKey"] = ReferenceExpression.Create($"{publishableKey}");
+                return Task.CompletedTask;
+            });
         }
 
         // Webhook signing secret — always injected (value is empty string until CLI starts)
         builder.WithEnvironment(context =>
-            context.EnvironmentVariables[DefaultWebhookSecretEnvVar] = source.Resource.WebhookSigningSecret ?? string.Empty);
+        {
+            context.EnvironmentVariables[DefaultWebhookSecretEnvVar] = source.Resource.WebhookSigningSecret ?? string.Empty;
+            return Task.CompletedTask;
+        });
 
         // Stripe.Extensions.DependencyInjection config section format: Stripe:{clientName}:WebhookSecret
         return builder.WithEnvironment(context =>
-            context.EnvironmentVariables[$"Stripe__{clientName}__WebhookSecret"] = source.Resource.WebhookSigningSecret ?? string.Empty);
+        {
+            context.EnvironmentVariables[$"Stripe__{clientName}__WebhookSecret"] = source.Resource.WebhookSigningSecret ?? string.Empty;
+            return Task.CompletedTask;
+        });
     }
 
     private static void AppendListenOptions<T>(
