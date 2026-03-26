@@ -85,9 +85,49 @@ var stripe = builder.AddStripeCli("stripe", apiKey: stripeApiKey)
 
 ```csharp
 api.WithReference(stripe);
-// or with a custom env var name:
-api.WithReference(stripe, envVarName: "MY_STRIPE_SECRET");
+// optional named Stripe config section mapping (Stripe__Secondary__*)
+api.WithReference(stripe, clientName: "Secondary");
 ```
+
+`WithReference` also injects `Stripe__{clientName}__WebhookSecret` for `AddStripe()` configuration binding.
+
+## Lifecycle notes (secret extraction + WaitFor)
+
+- `WebhookSigningSecret` starts as `null`.
+- `WithReference(...)` always injects `STRIPE_WEBHOOK_SECRET`, but its value is an empty string until Stripe CLI startup logs include a `whsec_...` secret.
+- `WithWebhookForwardTo(...)` registers a health check that becomes healthy only after secret extraction.
+
+To avoid startup races, wire the dependency and wait explicitly:
+
+```csharp
+api.WithReference(stripe)
+   .WaitFor(stripe);
+```
+
+Without `WaitFor(stripe)`, dependent services can start before the webhook secret is available.
+
+## Troubleshooting / diagnostics
+
+### `stripe` command not found (local mode)
+
+- Install the [Stripe CLI](https://docs.stripe.com/stripe-cli).
+- Ensure `stripe` is on your `PATH`, or pass `stripePath` to `AddStripeCli(...)`.
+
+### `STRIPE_WEBHOOK_SECRET` is empty at startup
+
+- Confirm you configured forwarding with `WithWebhookForwardTo(...)` (this enables secret extraction).
+- Add `.WaitFor(stripe)` on services that consume `WithReference(stripe)`.
+- Check AppHost logs for Stripe CLI startup output and the emitted `whsec_...` line.
+
+### Invalid forwarding target errors
+
+`WithWebhookForwardTo` throws when the target has no endpoints or an endpoint has not been allocated yet. Ensure forwarded resources expose an endpoint (for example, `WithHttpEndpoint(...)`).
+
+### Docker container cannot reach host endpoint
+
+When using `AddStripeCliContainer(...)`, forwarding to host-bound services rewrites `localhost` to `host.docker.internal`.
+- On macOS/Windows (Docker Desktop), this is available by default.
+- On Linux, the integration adds `--add-host=host.docker.internal:host-gateway` automatically.
 
 ## How it works
 

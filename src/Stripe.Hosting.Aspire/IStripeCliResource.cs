@@ -5,6 +5,7 @@ namespace Aspire.Hosting.ApplicationModel;
 /// Implemented by both <see cref="StripeCliResource"/> (local executable) and
 /// <see cref="StripeCliContainerResource"/> (Docker container).
 /// </summary>
+[AspireExport(ExposeProperties = true)]
 public interface IStripeCliResource : IResourceWithArgs
 {
     /// <summary>

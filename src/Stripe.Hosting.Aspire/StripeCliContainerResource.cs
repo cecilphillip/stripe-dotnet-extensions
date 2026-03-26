@@ -5,6 +5,7 @@ namespace Aspire.Hosting.ApplicationModel;
 /// Uses the official <c>stripe/stripe-cli</c> Docker image.
 /// </summary>
 /// <param name="name">The name of the resource.</param>
+[AspireExport(ExposeProperties = true)]
 public sealed class StripeCliContainerResource(string name)
     : ContainerResource(name), IStripeCliResource
 {

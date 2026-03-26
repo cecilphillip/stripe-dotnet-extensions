@@ -35,6 +35,7 @@ public static class StripeCliBuilderExtensions
     /// <param name="apiKey">Optional parameter resource providing the Stripe secret API key.</param>
     /// <param name="stripePath">Optional path to the Stripe CLI executable. Defaults to <c>stripe</c> (resolved from PATH).</param>
     /// <returns>A reference to the <see cref="IResourceBuilder{StripeCliResource}"/>.</returns>
+    [AspireExport("addStripeCli", Description = "Adds a locally installed Stripe CLI resource for webhook forwarding")]
     public static IResourceBuilder<StripeCliResource> AddStripeCli(
         this IDistributedApplicationBuilder builder,
         [ResourceName] string name,
@@ -79,6 +80,7 @@ public static class StripeCliBuilderExtensions
     /// <param name="apiKey">Optional parameter resource providing the Stripe secret API key.</param>
     /// <param name="publishableKey">Optional parameter resource providing the Stripe publishable key.</param>
     /// <returns>A reference to the <see cref="IResourceBuilder{StripeCliContainerResource}"/>.</returns>
+    [AspireExport("addStripeCliContainer", Description = "Adds a Stripe CLI Docker container resource for webhook forwarding")]
     public static IResourceBuilder<StripeCliContainerResource> AddStripeCliContainer(
         this IDistributedApplicationBuilder builder,
         [ResourceName] string name,
@@ -133,6 +135,7 @@ public static class StripeCliBuilderExtensions
     /// <param name="events">Optional collection of specific event types to listen for. If not specified, all events are forwarded.</param>
     /// <param name="skipVerify">When <c>true</c>, passes <c>--skip-verify</c> to skip SSL certificate verification.</param>
     /// <returns>A reference to the <see cref="IResourceBuilder{T}"/>.</returns>
+    [AspireExport("withWebhookForwardTo", Description = "Configures Stripe CLI to forward webhook events to the specified endpoint")]
     public static IResourceBuilder<T> WithWebhookForwardTo<T, TTarget>(
         this IResourceBuilder<T> builder,
         IResourceBuilder<TTarget> forwardTo,
@@ -165,6 +168,7 @@ public static class StripeCliBuilderExtensions
     /// <param name="webhookPath">The path on each target resource's endpoint.</param>
     /// <param name="forwardTo">One or more Aspire resources to forward webhook events to.</param>
     /// <returns>A reference to the <see cref="IResourceBuilder{T}"/>.</returns>
+    [AspireExport("withWebhookForwardTo", Description = "Configures Stripe CLI to forward webhook events to multiple endpoints")]
     public static IResourceBuilder<T> WithWebhookForwardTo<T>(
         this IResourceBuilder<T> builder,
         string webhookPath,
@@ -204,6 +208,7 @@ public static class StripeCliBuilderExtensions
     /// <param name="forwardTo">The Aspire resource to forward Connect webhook events to.</param>
     /// <param name="webhookPath">The path on the target resource's endpoint. Defaults to <c>/webhooks/stripe-connect</c>.</param>
     /// <returns>A reference to the <see cref="IResourceBuilder{T}"/>.</returns>
+    [AspireExport("withWebhookConnectForwardTo", Description = "Configures Stripe CLI to forward Connect webhook events to the specified endpoint")]
     public static IResourceBuilder<T> WithWebhookConnectForwardTo<T, TTarget>(
         this IResourceBuilder<T> builder,
         IResourceBuilder<TTarget> forwardTo,
@@ -233,6 +238,7 @@ public static class StripeCliBuilderExtensions
     /// <param name="webhookPath">The path on each target resource's endpoint.</param>
     /// <param name="forwardTo">One or more Aspire resources to forward Connect webhook events to.</param>
     /// <returns>A reference to the <see cref="IResourceBuilder{T}"/>.</returns>
+    [AspireExport("withWebhookConnectForwardTo", Description = "Configures Stripe CLI to forward Connect webhook events to multiple endpoints")]
     public static IResourceBuilder<T> WithWebhookConnectForwardTo<T>(
         this IResourceBuilder<T> builder,
         string webhookPath,
@@ -295,6 +301,7 @@ public static class StripeCliBuilderExtensions
     /// Defaults to <c>"Default"</c>, matching the default used by <c>services.AddStripe()</c>.
     /// </param>
     /// <returns>A reference to the <see cref="IResourceBuilder{TDestination}"/>.</returns>
+    [AspireExport("withReference", Description = "Injects Stripe credentials and webhook secret into a dependent service")]
     public static IResourceBuilder<TDestination> WithReference<TDestination, TStripe>(
         this IResourceBuilder<TDestination> builder,
         IResourceBuilder<TStripe> source,

@@ -7,6 +7,7 @@ namespace Aspire.Hosting.ApplicationModel;
 /// <param name="name">The name of the resource.</param>
 /// <param name="command">The path to the Stripe CLI executable.</param>
 /// <param name="workingDirectory">The working directory for the executable.</param>
+[AspireExport(ExposeProperties = true)]
 public sealed class StripeCliResource(string name, string command, string workingDirectory)
     : ExecutableResource(name, command, workingDirectory), IStripeCliResource
 {
