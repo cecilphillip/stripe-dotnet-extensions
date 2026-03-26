@@ -303,7 +303,7 @@ public async Task UpdatesCustomerOnCreation()
 }
 ```
 
-## .NET Aspire Integration
+## Aspire Integration
 
 `Stripe.Hosting.Aspire` adds the Stripe CLI to your Aspire AppHost so it automatically forwards webhook events to your local services during development. It supports two modes: a **locally installed Stripe CLI** or the official **Docker image**.
 
