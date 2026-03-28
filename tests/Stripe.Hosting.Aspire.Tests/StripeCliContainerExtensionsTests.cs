@@ -249,4 +249,42 @@ public class StripeCliContainerExtensionsTests
         var runtimeArgs = resource.Annotations.OfType<ContainerRuntimeArgsCallbackAnnotation>();
         Assert.Empty(runtimeArgs);
     }
+
+    [Fact]
+    public void WithTriggerEventCommand_NullBuilder_Throws()
+    {
+        IResourceBuilder<StripeCliContainerResource> builder = null!;
+        Assert.Throws<ArgumentNullException>(() => builder.WithTriggerEventCommand());
+    }
+
+    [Fact]
+    public void WithTriggerEventCommand_RegistersCommandAnnotation()
+    {
+        var builder = DistributedApplication.CreateBuilder();
+        var stripe = builder.AddStripeCliContainer("stripe");
+
+        stripe.WithTriggerEventCommand();
+
+        using var app = builder.Build();
+        var appModel = app.Services.GetRequiredService<DistributedApplicationModel>();
+        var resource = Assert.Single(appModel.Resources.OfType<StripeCliContainerResource>());
+
+        var commandAnnotation = resource.Annotations.OfType<ResourceCommandAnnotation>()
+            .SingleOrDefault(c => c.Name == "trigger-stripe-event");
+        Assert.NotNull(commandAnnotation);
+        Assert.Equal("trigger-stripe-event", commandAnnotation.Name);
+        Assert.Equal("Trigger Stripe Event", commandAnnotation.DisplayName);
+    }
+
+    [Fact]
+    public void WithTriggerEventCommand_WorksOnStripeCliContainerResource()
+    {
+        var builder = DistributedApplication.CreateBuilder();
+        var stripe = builder.AddStripeCliContainer("stripe");
+
+        var result = stripe.WithTriggerEventCommand();
+
+        Assert.NotNull(result);
+        Assert.Same(stripe, result);
+    }
 }
