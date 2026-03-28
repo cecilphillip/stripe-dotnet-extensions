@@ -506,27 +506,28 @@ public static class StripeCliBuilderExtensions
             return false;
         }
 
-        const string Prefix = "whsec_";
-        var startIndex = content.IndexOf(Prefix, StringComparison.OrdinalIgnoreCase);
+        var span = content.AsSpan();
+        var startIndex = span.IndexOf("whsec_", StringComparison.OrdinalIgnoreCase);
         if (startIndex < 0)
         {
             return false;
         }
 
-        var endIndex = startIndex + Prefix.Length;
-        while (endIndex < content.Length && IsSecretCharacter(content[endIndex]))
+        const int PrefixLength = 6; // "whsec_".Length
+        var endIndex = startIndex + PrefixLength;
+        while (endIndex < span.Length && IsSecretCharacter(span[endIndex]))
         {
             endIndex++;
         }
 
-        var candidate = content[startIndex..endIndex].TrimEnd('.', ';', ',', ')', '"');
+        var candidate = span.Slice(startIndex, endIndex - startIndex).TrimEnd(".;,)\"");
 
-        if (candidate.Length <= Prefix.Length)
+        if (candidate.Length <= PrefixLength)
         {
             return false;
         }
 
-        secret = candidate;
+        secret = candidate.ToString();
         return true;
 
         static bool IsSecretCharacter(char c) => char.IsLetterOrDigit(c) || c is '_' or '-';
