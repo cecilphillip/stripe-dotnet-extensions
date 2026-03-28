@@ -2,6 +2,7 @@ using Aspire.Hosting.ApplicationModel;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Stripe.Hosting.Aspire;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 
 // Extension methods go in Aspire.Hosting namespace so they are discovered automatically
@@ -540,5 +541,151 @@ public static class StripeCliBuilderExtensions
             Task.FromResult(resource.WebhookSigningSecret is not null
                 ? HealthCheckResult.Healthy("Webhook signing secret is available.")
                 : HealthCheckResult.Unhealthy("Waiting for webhook signing secret from Stripe CLI."));
+    }
+
+    /// <summary>
+    /// Adds a "Trigger Stripe Event" command to the Aspire dashboard for this resource.
+    /// When clicked, opens a dialog prompting for an event type string (e.g. "payment_intent.succeeded")
+    /// and runs <c>stripe trigger &lt;event_type&gt;</c>.
+    /// This command is only enabled when the resource is healthy (signing secret captured).
+    /// </summary>
+    [AspireExport("withTriggerEventCommand",
+        Description = "Adds a Trigger Stripe Event command to the Aspire dashboard")]
+    public static IResourceBuilder<T> WithTriggerEventCommand<T>(this IResourceBuilder<T> builder)
+        where T : IResource, IStripeCliResource
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+
+        builder.WithCommand(
+            name: "trigger-stripe-event",
+            displayName: "Trigger Stripe Event",
+            executeCommand: context => ExecuteTriggerEventCommandAsync(builder.Resource, context),
+            commandOptions: new CommandOptions
+            {
+                IconName = "Flash",
+                IconVariant = IconVariant.Filled,
+                IsHighlighted = true,
+                Description = "Trigger a Stripe test event",
+                UpdateState = ctx => ctx.ResourceSnapshot.HealthStatus == HealthStatus.Healthy
+                    ? ResourceCommandState.Enabled
+                    : ResourceCommandState.Disabled
+            });
+
+        return builder;
+    }
+
+    private static async Task<ExecuteCommandResult> ExecuteTriggerEventCommandAsync<T>(
+        T resource,
+        ExecuteCommandContext context)
+        where T : IResource, IStripeCliResource
+    {
+#pragma warning disable ASPIREINTERACTION001
+        var interactionService = context.ServiceProvider.GetRequiredService<IInteractionService>();
+
+        if (!interactionService.IsAvailable)
+            return CommandResults.Failure("Interaction service is not available in this environment.");
+
+        var result = await interactionService.PromptInputAsync(
+            "Trigger Stripe Event",
+            "Enter the event type to trigger (e.g. payment_intent.succeeded).",
+            new InteractionInput
+            {
+                Name = "eventType",
+                Label = "Event Type",
+                Placeholder = "payment_intent.succeeded",
+                Description = "View available event types: https://docs.stripe.com/api/events/types",
+                InputType = InputType.Text,
+                Required = true
+            });
+
+        if (result.Canceled)
+            return CommandResults.Canceled();
+
+        var eventType = result.Data?.Value?.Trim();
+        if (string.IsNullOrEmpty(eventType))
+            return CommandResults.Failure("Event type cannot be empty.");
+#pragma warning restore ASPIREINTERACTION001
+
+        return resource switch
+        {
+            StripeCliResource localResource =>
+                await TriggerViaLocalProcess(localResource, eventType, context.CancellationToken),
+            StripeCliContainerResource containerResource =>
+                await TriggerViaContainerRun(containerResource, eventType, context.CancellationToken),
+            _ => CommandResults.Failure($"Unsupported resource type: {resource.GetType().Name}")
+        };
+    }
+
+    private static async Task<ExecuteCommandResult> TriggerViaLocalProcess(
+        StripeCliResource resource,
+        string eventType,
+        CancellationToken ct)
+    {
+        var psi = new ProcessStartInfo(resource.Command)
+        {
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true
+        };
+        psi.ArgumentList.Add("trigger");
+        psi.ArgumentList.Add(eventType);
+
+        if (resource.SecretKey is not null)
+        {
+            var apiKey = await resource.SecretKey.GetValueAsync(ct).ConfigureAwait(false);
+            if (!string.IsNullOrEmpty(apiKey))
+                psi.Environment[ApiKeyEnvVar] = apiKey;
+        }
+
+        using var process = Process.Start(psi)
+            ?? throw new InvalidOperationException("Failed to start Stripe CLI process.");
+
+        await process.WaitForExitAsync(ct).ConfigureAwait(false);
+
+        return process.ExitCode == 0
+            ? CommandResults.Success()
+            : CommandResults.Failure(await process.StandardError.ReadToEndAsync(ct).ConfigureAwait(false));
+    }
+
+    private static async Task<ExecuteCommandResult> TriggerViaContainerRun(
+        StripeCliContainerResource resource,
+        string eventType,
+        CancellationToken ct)
+    {
+        var psi = new ProcessStartInfo("docker")
+        {
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true
+        };
+
+        psi.ArgumentList.Add("run");
+        psi.ArgumentList.Add("--rm");
+
+        if (resource.SecretKey is not null)
+        {
+            var apiKey = await resource.SecretKey.GetValueAsync(ct).ConfigureAwait(false);
+            if (!string.IsNullOrEmpty(apiKey))
+            {
+                // Pass the key through the host environment rather than embedding it in args
+                psi.Environment[ApiKeyEnvVar] = apiKey;
+                psi.ArgumentList.Add("--env");
+                psi.ArgumentList.Add(ApiKeyEnvVar);  // docker picks up value from host env
+            }
+        }
+
+        psi.ArgumentList.Add(
+            $"{StripeCliContainerImageTags.Registry}/{StripeCliContainerImageTags.Image}:{StripeCliContainerImageTags.Tag}");
+        psi.ArgumentList.Add("trigger");
+        psi.ArgumentList.Add(eventType);
+
+        using var process = Process.Start(psi)
+            ?? throw new InvalidOperationException("Failed to start Docker process.");
+
+        await process.WaitForExitAsync(ct).ConfigureAwait(false);
+
+        return process.ExitCode == 0
+            ? CommandResults.Success()
+            : CommandResults.Failure(await process.StandardError.ReadToEndAsync(ct).ConfigureAwait(false));
     }
 }
