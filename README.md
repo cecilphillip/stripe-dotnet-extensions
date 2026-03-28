@@ -9,7 +9,7 @@ to help improve the experience integrating Stripe in .NET applications.
 
 - **Stripe.Extensions.DependencyInjection** — configuration and dependency injection support for the [Stripe .NET SDK](https://github.com/stripe/stripe-dotnet).
 - **Stripe.Extensions.AspNetCore** — webhook handling helpers for Stripe [events](https://docs.stripe.com/api/events/types) in ASP.NET Core applications.
-- **Stripe.Hosting.Aspire** — [.NET Aspire](https://learn.microsoft.com/dotnet/aspire) hosting integration for the Stripe CLI, enabling local webhook forwarding during development.
+- **Stripe.Hosting.Aspire** — [Aspire](https://aspire.dev) hosting integration for the Stripe CLI, enabling local webhook forwarding during development.
 
 
 ## Install
@@ -326,8 +326,8 @@ dotnet add package Stripe.Hosting.Aspire
 Store your Stripe API keys as user secrets in the AppHost project:
 
 ```shell
-dotnet user-secrets set "Parameters:stripe-api-key"         "sk_test_..."
-dotnet user-secrets set "Parameters:stripe-publishable-key" "pk_test_..."
+aspire secret set "Parameters:stripe-api-key"         "sk_test_..."
+aspire secret set "Parameters:stripe-publishable-key" "pk_test_..."
 ```
 
 Then wire up the Stripe CLI in your AppHost:
@@ -416,7 +416,7 @@ var stripeCli = builder.AddStripeCliContainer("stripe-cli", apiKey: stripeApiKey
 
 - [Stripe CLI documentation](https://docs.stripe.com/stripe-cli)
 - [Testing webhooks locally](https://docs.stripe.com/webhooks/test)
-- [.NET Aspire documentation](https://learn.microsoft.com/dotnet/aspire)
+- [Aspire documentation](https://aspire.dev)
 
 ### Useful links
 - [Stripe.NET](https://github.com/stripe/stripe-dotnet)
