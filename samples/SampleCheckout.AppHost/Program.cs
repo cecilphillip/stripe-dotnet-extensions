@@ -1,11 +1,4 @@
 // Stripe CLI Aspire Integration — Sample AppHost
-//
-// This AppHost demonstrates using Stripe.Hosting.Aspire to run the Stripe CLI
-// alongside an ASP.NET Core web application during local development.
-//
-// The Stripe CLI starts in webhook-forwarding mode, proxying Stripe events to
-// the local application and automatically setting the webhook signing secret.
-//
 // Prerequisites:
 //   - Stripe CLI installed and in PATH  (https://stripe.com/docs/stripe-cli)
 //   - OR: Docker running (for the container mode variant below)
@@ -23,9 +16,6 @@ var builder = DistributedApplication.CreateBuilder(args);
 var stripeApiKey = builder.AddParameter("stripe-api-key", secret: true);
 var stripePublishableKey = builder.AddParameter("stripe-publishable-key", secret: false);
 
-// ---------------------------------------------------------------------------
-// Application services
-// ---------------------------------------------------------------------------
 
 // The SampleCheckout web app — exposes the Stripe webhook endpoint at
 // /stripe/webhook (the default path for MapStripeWebhookHandler<T>).
@@ -48,7 +38,8 @@ var checkout = builder.AddProject<Projects.SampleCheckout>("checkout");
 // On Linux, --add-host=host.docker.internal:host-gateway is added automatically.
 
 var stripeCli = builder.AddStripeCliContainer("stripe-cli", apiKey: stripeApiKey, publishableKey: stripePublishableKey)
-    .WithWebhookForwardTo(checkout, webhookPath: "/stripe/webhook");
+    .WithWebhookForwardTo(checkout, webhookPath: "/stripe/webhook")
+    .WithTriggerEventCommand();  // Add button to dashboard to trigger test events
 
 // ---------------------------------------------------------------------------
 // Inject Stripe credentials into the checkout service
