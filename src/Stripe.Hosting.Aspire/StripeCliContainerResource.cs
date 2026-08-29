@@ -9,8 +9,14 @@ namespace Aspire.Hosting.ApplicationModel;
 public sealed class StripeCliContainerResource(string name)
     : ContainerResource(name), IStripeCliResource
 {
+    private volatile string? _webhookSigningSecret;
+
     /// <inheritdoc/>
-    public string? WebhookSigningSecret { get; internal set; }
+    public string? WebhookSigningSecret
+    {
+        get => _webhookSigningSecret;
+        internal set => _webhookSigningSecret = value;
+    }
 
     /// <inheritdoc/>
     public ParameterResource? SecretKey { get; internal set; }

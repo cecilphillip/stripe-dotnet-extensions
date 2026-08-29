@@ -139,7 +139,25 @@ public class ServiceCollectionExtensionsTest
 
         var provider = collection.BuildServiceProvider();
         var exception = Assert.Throws<InvalidOperationException>(() => provider.GetRequiredService<StripeClient>());
-        Assert.StartsWith("ApiKey is required to make requests to Stripe API. ", exception.Message);
+        Assert.Contains("Stripe API key is missing for client 'Default'", exception.Message);
+        Assert.Contains("Stripe:Default:ApiKey", exception.Message);
+    }
+
+    [Fact]
+    public void AddStripe_DefaultClient_RegistersConcreteAndKeyedClients()
+    {
+        var collection = new ServiceCollection();
+        collection.AddSingleton<IConfiguration>(new ConfigurationBuilder()
+            .AddInMemoryCollection(new Dictionary<string, string?>()
+            {
+                ["Stripe:Default:ApiKey"] = "MyKey"
+            }).Build());
+
+        collection.AddStripe();
+
+        var provider = collection.BuildServiceProvider();
+        Assert.NotNull(provider.GetRequiredService<StripeClient>());
+        Assert.NotNull(provider.GetKeyedService<StripeClient>(StripeOptions.DefaultClientConfigurationSectionName));
     }
 
     [Fact]

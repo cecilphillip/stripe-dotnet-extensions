@@ -65,18 +65,18 @@ dotnet pack
 ### Dependency Injection & Configuration
 
 Using `Stripe.Extensions.DependencyInjection` you can register named and unnamed versions of `StripeClient` using `AddStripe()`.
-The StripClient service is registered as scoped. 
+The `StripeClient` service is registered as scoped. 
 
 ```csharp
 builder.Services.AddStripe();
 ```
 
-The `AddStripe()` extension also supports registering named StripeClients, which uses keyed DI registrations.
+The `AddStripe()` extension also supports registering named `StripeClient` instances, which uses keyed DI registrations.
 
 ```csharp
 builder.Services.AddStripe(); // default client
-builder.Services.AddStripe("client1"); // client1
-builder.Services.AddStripe("client2"); // client2
+builder.Services.AddStripe("client1"); // named client1
+builder.Services.AddStripe("client2"); // named client2
 ```
 
 ### Configuration
@@ -109,7 +109,7 @@ To configure a client named `client1` when using `AddStripe("client1")`::
 }
 ```
 
-Configuration can also be attached to each registered client passing in a configuration delegate method.
+Configuration can also be attached to each registered client by passing a configuration delegate.
 
 ```csharp
 // default registration 
@@ -128,6 +128,26 @@ builder.Services.AddStripe("client1", opts =>
 ```
 
 > See [StripeOptions](src/Stripe.Extensions.DependencyInjection/StripeOptions.cs) for all the available options.
+
+### Aspire event forwarding
+
+`Stripe.Hosting.Aspire` includes convenience APIs for wiring the Stripe CLI to Aspire resources during local development.
+
+```csharp
+var stripe = builder.AddStripeCli("stripe");
+
+stripe.WithWebhookForwardTo(api);
+stripe.WithWebhookConnectForwardTo(api);
+
+// Multiple targets are also supported
+stripe.WithWebhookForwardTo("/webhooks/stripe", api, worker);
+stripe.WithWebhookConnectForwardTo("/webhooks/stripe-connect", api, worker);
+```
+
+`WithReference(stripe)` injects the Stripe API key, publishable key, and webhook secret into dependent resources. The webhook secret is resolved when the CLI starts, so dependent resources can use `WaitFor(stripe)` before starting.
+
+For Stripe v1 events, use `MapStripeWebhookHandler<T>()` / `StripeWebhookHandler<T>`.
+For Stripe v2 thin events and snapshot events, use `MapStripeThinEventHandler<T>()` / `StripeThinEventHandler<T>`.
 
 Retrieving the default client registered with `AddStripe()`: 
 
@@ -411,6 +431,15 @@ var stripeCli = builder.AddStripeCliContainer("stripe-cli", apiKey: stripeApiKey
 3. Once captured, a health check on the `stripe-cli` resource transitions to **Healthy**.
 4. `WaitFor(stripeCli)` holds the dependent service until the health check passes, guaranteeing `STRIPE_WEBHOOK_SECRET` is populated before the service starts.
 5. On **macOS/Windows** (Docker Desktop), `localhost` in `--forward-to` URLs is automatically rewritten to `host.docker.internal`. On **Linux**, `--add-host=host.docker.internal:host-gateway` is injected into the container runtime args.
+
+### Publish mode
+
+The Stripe CLI is a local development tool, so it is excluded from published artifacts (`aspire publish`). Two things follow from that:
+
+- **The webhook secret becomes a deployment parameter.** Because the CLI never runs during publish, there is no secret to capture. The environment variables are still emitted, but as an unresolved placeholder for you to supply at deploy time — for example, the Docker Compose publisher writes `STRIPE_WEBHOOK_SECRET: "${STRIPE_CLI_WEBHOOKSIGNINGSECRET}"` and adds a matching blank entry to `.env`. In production, supply the signing secret of a real webhook endpoint created in the Stripe Dashboard rather than one from the CLI.
+- **`WaitFor(stripeCli)` is dropped automatically.** Waiting on a resource that was excluded from the manifest would emit a dependency on a service that does not exist in the output (with the Docker Compose publisher, `docker compose config` rejects the project outright). The integration removes those wait relationships during publish, so you can keep using `WaitFor` unconditionally in your AppHost. It remains fully active in run mode, where it is what guarantees the secret is populated before your service starts.
+
+No credential is ever written into published artifacts.
 
 ### Additional Information
 

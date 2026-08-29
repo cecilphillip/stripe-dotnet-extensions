@@ -186,6 +186,23 @@ public class StripeCliContainerExtensionsTests
     }
 
     [Fact]
+    public void WithWebhookForwardTo_Container_RegistersSecretResolver()
+    {
+        var builder = DistributedApplication.CreateBuilder();
+        var api = builder.AddContainer("api", "myimage").WithHttpEndpoint(port: 5082);
+
+        builder.AddStripeCliContainer("stripe")
+            .WithWebhookForwardTo(api, webhookPath: "/webhooks/stripe");
+
+        using var app = builder.Build();
+        var appModel = app.Services.GetRequiredService<DistributedApplicationModel>();
+        var resource = Assert.Single(appModel.Resources.OfType<StripeCliContainerResource>());
+
+        var healthChecks = resource.Annotations.OfType<HealthCheckAnnotation>();
+        Assert.NotEmpty(healthChecks);
+    }
+
+    [Fact]
     public void WebhookSigningSecret_InitiallyNull()
     {
         var builder = DistributedApplication.CreateBuilder();

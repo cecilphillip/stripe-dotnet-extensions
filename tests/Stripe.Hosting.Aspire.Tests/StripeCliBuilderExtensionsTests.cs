@@ -189,6 +189,40 @@ public class StripeCliBuilderExtensionsTests
     }
 
     [Fact]
+    public void WithWebhookConnectForwardTo_RegistersSecretResolver()
+    {
+        var builder = DistributedApplication.CreateBuilder();
+        var api = builder.AddContainer("api", "myimage").WithHttpEndpoint(port: 5082);
+
+        builder.AddStripeCli("stripe")
+            .WithWebhookConnectForwardTo(api, webhookPath: "/webhooks/stripe-connect");
+
+        using var app = builder.Build();
+        var appModel = app.Services.GetRequiredService<DistributedApplicationModel>();
+        var resource = Assert.Single(appModel.Resources.OfType<StripeCliResource>());
+
+        var healthCheck = Assert.Single(resource.Annotations.OfType<HealthCheckAnnotation>());
+        Assert.Equal("stripe.cli.webhook-secret.stripe", healthCheck.Key);
+    }
+
+    [Fact]
+    public void WithWebhookForwardTo_RegistersSecretResolver()
+    {
+        var builder = DistributedApplication.CreateBuilder();
+        var api = builder.AddContainer("api", "myimage").WithHttpEndpoint(port: 5082);
+
+        builder.AddStripeCli("stripe")
+            .WithWebhookForwardTo(api, webhookPath: "/webhooks/stripe");
+
+        using var app = builder.Build();
+        var appModel = app.Services.GetRequiredService<DistributedApplicationModel>();
+        var resource = Assert.Single(appModel.Resources.OfType<StripeCliResource>());
+
+        var healthCheck = Assert.Single(resource.Annotations.OfType<HealthCheckAnnotation>());
+        Assert.Equal("stripe.cli.webhook-secret.stripe", healthCheck.Key);
+    }
+
+    [Fact]
     public void WithWebhookConnectForwardTo_MultipleTargets_AddsCallbackPerTarget()
     {
         var builder = DistributedApplication.CreateBuilder();
@@ -223,8 +257,9 @@ public class StripeCliBuilderExtensionsTests
         var appModel = app.Services.GetRequiredService<DistributedApplicationModel>();
 
         var apiResource = appModel.Resources.Single(r => r.Name == "api");
-        var envAnnotations = apiResource.Annotations.OfType<EnvironmentCallbackAnnotation>();
-        Assert.NotEmpty(envAnnotations);
+        var envAnnotations = apiResource.Annotations.OfType<EnvironmentCallbackAnnotation>().ToArray();
+        Assert.Equal(2, envAnnotations.Length);
+        Assert.All(envAnnotations, annotation => Assert.NotNull(annotation.Callback));
     }
 
     [Fact]

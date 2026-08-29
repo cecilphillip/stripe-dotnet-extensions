@@ -1,5 +1,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
+using static Stripe.Extensions.DependencyInjection.StripeOptions;
 
 namespace Stripe.Extensions.DependencyInjection;
 
@@ -21,9 +22,14 @@ internal sealed class StripeClientBuilder(IHttpClientBuilder httpClientBuilder) 
         
         if (string.IsNullOrEmpty(stripeOptions.ApiKey))
         {
-            throw new InvalidOperationException("ApiKey is required to make requests to Stripe API. " +
-                                                "You can set it using Stripe:<Section>:ApiKey configuration section or " +
-                                                "by passing the value to .AddStripe(\"key\") call");
+            var configPath = $"Stripe:{Name}:ApiKey";
+            var hint = Name == DefaultClientConfigurationSectionName
+                ? "pass the value via AddStripe(configureOptions: opts => opts.ApiKey = ...)."
+                : $"pass the value via AddStripe(\"{Name}\", opts => opts.ApiKey = ...).";
+            
+            throw new InvalidOperationException(
+                $"Stripe API key is missing for client '{Name}'. " +
+                $"Set '{configPath}' in configuration or {hint}");
         }
 
         var clientFactory = serviceProvider.GetRequiredService<IHttpClientFactory>();

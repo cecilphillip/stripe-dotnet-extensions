@@ -363,3 +363,6 @@ samples/**/.aspire
 .squad/sessions/
 # Squad: SubSquad activation file (local to this machine)
 .squad-workstream
+# GitHub Copilot skills: only project-owned skills are tracked; the rest are local to a machine.
+.github/skills/*
+!.github/skills/dotnet-inspect/

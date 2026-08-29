@@ -1,7 +1,10 @@
 using Aspire.Hosting.ApplicationModel;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Logging;
 using Stripe.Hosting.Aspire;
+using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
 
 // Extension methods go in Aspire.Hosting namespace so they are discovered automatically
@@ -68,6 +71,8 @@ public static class StripeCliBuilderExtensions
             resource.PublishableKey = publishableKey.Resource;
         }
 
+        DropWaitAnnotationsWhenPublishing(builder, resource);
+
         return resourceBuilder;
     }
 
@@ -120,6 +125,8 @@ public static class StripeCliBuilderExtensions
         {
             resource.PublishableKey = publishableKey.Resource;
         }
+
+        DropWaitAnnotationsWhenPublishing(builder, resource);
 
         return resourceBuilder;
     }
@@ -226,7 +233,7 @@ public static class StripeCliBuilderExtensions
             context.Args.Add(BuildForwardToUrl(stripeResource, forwardTo.Resource, webhookPath));
         });
 
-        return builder;
+        return builder.EnsureWebhookSigningSecretResolver();
     }
 
     /// <summary>
@@ -265,7 +272,7 @@ public static class StripeCliBuilderExtensions
             });
         }
 
-        return builder;
+        return builder.EnsureWebhookSigningSecretResolver();
     }
 
     private const string DefaultClientName = "Default";
@@ -347,17 +354,20 @@ public static class StripeCliBuilderExtensions
             });
         }
 
-        // Webhook signing secret — always injected (value is empty string until CLI starts)
+        // Built once, outside the callbacks: the reference defers resolution to the value provider,
+        // so a single expression stays correct no matter when the environment is materialized.
+        var webhookSecretReference = ReferenceExpression.Create($"{new WebhookSecretReference(source.Resource)}");
+
         builder.WithEnvironment(context =>
         {
-            context.EnvironmentVariables[DefaultWebhookSecretEnvVar] = source.Resource.WebhookSigningSecret ?? string.Empty;
+            context.EnvironmentVariables[DefaultWebhookSecretEnvVar] = webhookSecretReference;
             return Task.CompletedTask;
         });
 
         // Stripe.Extensions.DependencyInjection config section format: Stripe:{clientName}:WebhookSecret
         return builder.WithEnvironment(context =>
         {
-            context.EnvironmentVariables[$"Stripe__{clientName}__WebhookSecret"] = source.Resource.WebhookSigningSecret ?? string.Empty;
+            context.EnvironmentVariables[$"Stripe__{clientName}__WebhookSecret"] = webhookSecretReference;
             return Task.CompletedTask;
         });
     }
@@ -419,9 +429,6 @@ public static class StripeCliBuilderExtensions
         return $"{allocatedEndpoint.UriString}{path}";
     }
 
-    // Sentinel annotation to ensure the log watcher is registered at most once per resource.
-    private sealed class StripeSecretResolverAnnotation : IResourceAnnotation { }
-
     private static IResourceBuilder<T> EnsureWebhookSigningSecretResolver<T>(this IResourceBuilder<T> builder)
         where T : IResource, IStripeCliResource
     {
@@ -440,27 +447,89 @@ public static class StripeCliBuilderExtensions
             .AddCheck(healthCheckKey, new StripeSigningSecretHealthCheck<T>(builder.Resource));
         builder.WithHealthCheck(healthCheckKey);
 
-        builder.OnBeforeResourceStarted((resource, @event, ct) =>
+        builder.OnBeforeResourceStarted(async (resource, @event, ct) =>
         {
-            return Task.Run(async () =>
+            var notificationService = @event.Services.GetRequiredService<ResourceNotificationService>();
+            var loggerService = @event.Services.GetRequiredService<ResourceLoggerService>();
+
+            // Instance-id discovery is awaited so the log watcher is attached before the CLI produces
+            // the line containing the signing secret. It is bounded by a timeout because this runs on
+            // the startup path: ResourceNotificationService.WatchAsync is documented only as "watch for
+            // changes to the state for all resources", with no guarantee that it replays state that was
+            // already current. Without the bound, a non-replaying watch would block BeforeResourceStarted
+            // forever — a hang is not an exception, so the catch handlers below would never see it.
+            //
+            // On timeout the discovery task is deliberately left running rather than cancelled: it still
+            // attaches the log watcher when the instance appears. That degrades the failure mode from
+            // "resource never starts" to "the secret may be captured slightly later", which WaitFor on
+            // the health check already handles.
+            var discovery = WatchForInstanceAsync(resource, notificationService, loggerService, ct);
+
+            if (!await CompletedWithinTimeoutAsync(discovery, InstanceDiscoveryTimeout, ct).ConfigureAwait(false)
+                && !ct.IsCancellationRequested)
             {
-                var notificationService = @event.Services.GetRequiredService<ResourceNotificationService>();
-                var loggerService = @event.Services.GetRequiredService<ResourceLoggerService>();
-
-                await foreach (var resourceEvent in notificationService.WatchAsync(ct).ConfigureAwait(false))
-                {
-                    if (!string.Equals(resource.Name, resourceEvent.Resource.Name, StringComparison.OrdinalIgnoreCase))
-                    {
-                        continue;
-                    }
-
-                    _ = WatchResourceLogsAsync(resource, resourceEvent.ResourceId, loggerService, ct);
-                    break;
-                }
-            }, ct);
+                LogInstanceDiscoveryTimeout(resource, loggerService);
+            }
         });
 
         return builder;
+    }
+
+    /// <summary>
+    /// Waits for <paramref name="work"/> to finish, giving up after <paramref name="timeout"/>.
+    /// </summary>
+    /// <returns><c>true</c> if the work completed in time; <c>false</c> if the timeout elapsed first.</returns>
+    /// <remarks>
+    /// On timeout the work task is intentionally <em>not</em> cancelled. The caller uses this to stop
+    /// blocking startup while allowing the operation to finish in the background.
+    /// </remarks>
+    internal static async Task<bool> CompletedWithinTimeoutAsync(Task work, TimeSpan timeout, CancellationToken cancellationToken)
+    {
+        // The delay is cancelled once the race is decided so a pending timer does not outlive this call.
+        using var timeoutCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+
+        var delay = Task.Delay(timeout, timeoutCancellation.Token);
+        var winner = await Task.WhenAny(work, delay).ConfigureAwait(false);
+
+        timeoutCancellation.Cancel();
+
+        return winner == work;
+    }
+
+    /// <summary>
+    /// Maximum time to wait for the Stripe CLI resource instance to be reported before allowing startup
+    /// to continue. See the call site for why this bound exists.
+    /// </summary>
+    private static readonly TimeSpan InstanceDiscoveryTimeout = TimeSpan.FromSeconds(10);
+
+    private static async Task WatchForInstanceAsync<T>(
+        T resource,
+        ResourceNotificationService notificationService,
+        ResourceLoggerService loggerService,
+        CancellationToken cancellationToken)
+        where T : IResource, IStripeCliResource
+    {
+        try
+        {
+            await foreach (var resourceEvent in notificationService.WatchAsync(cancellationToken).ConfigureAwait(false))
+            {
+                if (!string.Equals(resource.Name, resourceEvent.Resource.Name, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                _ = WatchResourceLogsAsync(resource, resourceEvent.ResourceId, loggerService, cancellationToken);
+                return;
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Expected during shutdown.
+        }
+        catch (Exception ex)
+        {
+            LogResolverFailure(resource, loggerService, ex);
+        }
     }
 
     private static async Task WatchResourceLogsAsync<T>(
@@ -478,14 +547,7 @@ public static class StripeCliBuilderExtensions
                 {
                     if (TryExtractSigningSecret(line.Content, out var signingSecret))
                     {
-                        if (resource is StripeCliResource localResource)
-                        {
-                            localResource.WebhookSigningSecret = signingSecret;
-                        }
-                        else if (resource is StripeCliContainerResource containerResource)
-                        {
-                            containerResource.WebhookSigningSecret = signingSecret;
-                        }
+                        resource.SetWebhookSigningSecret(signingSecret);
                         return;
                     }
                 }
@@ -495,9 +557,116 @@ public static class StripeCliBuilderExtensions
         {
             // Expected during shutdown.
         }
+        catch (Exception ex)
+        {
+            LogResolverFailure(resource, loggerService, ex);
+        }
     }
 
-    private static bool TryExtractSigningSecret(string? content, out string? secret)
+    /// <summary>
+    /// Surfaces a resolver failure on the resource's own log stream.
+    /// </summary>
+    /// <remarks>
+    /// Without this, a fault leaves the signing secret permanently uncaptured: the health check never
+    /// reports healthy and every <c>WaitFor</c> on this resource waits forever with no diagnostic.
+    /// </remarks>
+    private static void LogResolverFailure(IResource resource, ResourceLoggerService loggerService, Exception exception)
+    {
+        try
+        {
+            loggerService.GetLogger(resource).LogError(
+                exception,
+                "Failed to capture the Stripe webhook signing secret from the CLI output. " +
+                "Resources waiting on '{ResourceName}' will not start.",
+                resource.Name);
+        }
+        catch (Exception loggingFailure)
+        {
+            Debug.WriteLine(loggingFailure);
+        }
+    }
+
+    private static void LogInstanceDiscoveryTimeout(IResource resource, ResourceLoggerService loggerService)
+    {
+        try
+        {
+            loggerService.GetLogger(resource).LogWarning(
+                "Timed out waiting for the '{ResourceName}' instance to be reported before startup. " +
+                "Continuing without blocking; the webhook signing secret will still be captured once the " +
+                "instance appears, but it may arrive later than usual.",
+                resource.Name);
+        }
+        catch (Exception loggingFailure)
+        {
+            Debug.WriteLine(loggingFailure);
+        }
+    }
+
+    /// <summary>
+    /// Removes <see cref="WaitAnnotation"/>s that target the Stripe CLI resource when the app host runs
+    /// in publish mode.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The Stripe CLI is a local development tool, so both <c>AddStripeCli</c> and
+    /// <c>AddStripeCliContainer</c> call <c>ExcludeFromManifest()</c> and the resource is therefore absent
+    /// from published artifacts. The documented usage pattern also calls <c>WaitFor(stripeCli)</c> so the
+    /// dependent service starts only after the signing secret has been scraped from CLI output.
+    /// </para>
+    /// <para>
+    /// Those two facts conflict during publish: the wait relationship is emitted as a dependency on a
+    /// resource that was excluded, which produces an unusable artifact. With the Docker Compose publisher
+    /// the result is <c>service "x" depends on undefined service "stripe-cli"</c> and
+    /// <c>docker compose config</c> rejects the project outright.
+    /// </para>
+    /// <para>
+    /// Dropping the annotations in publish mode keeps <c>WaitFor</c> fully functional during <c>run</c>,
+    /// where it is load bearing, while ensuring published output does not declare a dependency on a
+    /// resource that was never emitted.
+    /// </para>
+    /// <para>
+    /// Environment variable injection from <c>WithReference</c> is deliberately left intact, because the
+    /// deployed application still needs a webhook signing secret — just not one scraped from a CLI that
+    /// does not run in production. The variables are emitted as the manifest expression
+    /// <c>{stripe-cli.webhookSigningSecret}</c> rather than a value, so no credential is written to the
+    /// artifact.
+    /// </para>
+    /// <para>
+    /// How that expression is rendered is publisher-specific and only verified here for the Docker
+    /// Compose publisher (Aspire 13.5.3), which turns it into a <c>${STRIPE_CLI_WEBHOOKSIGNINGSECRET}</c>
+    /// reference plus a blank entry in <c>.env</c> for the operator to fill in;
+    /// <c>docker compose config</c> accepts the result. This is unlike the <c>depends_on</c> case above,
+    /// which named a service that had to exist in the same file. Other publishers have not been tested.
+    /// </para>
+    /// </remarks>
+    private static void DropWaitAnnotationsWhenPublishing(IDistributedApplicationBuilder builder, IResource resource)
+    {
+        if (!builder.ExecutionContext.IsPublishMode)
+        {
+            return;
+        }
+
+        builder.Eventing.Subscribe<BeforeStartEvent>((@event, _) =>
+        {
+            foreach (var candidate in @event.Model.Resources)
+            {
+                if (ReferenceEquals(candidate, resource) ||
+                    !candidate.TryGetAnnotationsOfType<WaitAnnotation>(out var waitAnnotations))
+                {
+                    continue;
+                }
+
+                foreach (var waitAnnotation in waitAnnotations.Where(w => ReferenceEquals(w.Resource, resource)).ToList())
+                {
+                    candidate.Annotations.Remove(waitAnnotation);
+                }
+            }
+
+            return Task.CompletedTask;
+        });
+    }
+
+    internal static bool TryExtractSigningSecret(string? content, [NotNullWhen(true)] out string? secret)
     {
         secret = null;
 
@@ -520,7 +689,9 @@ public static class StripeCliBuilderExtensions
             endIndex++;
         }
 
-        var candidate = span.Slice(startIndex, endIndex - startIndex).TrimEnd(".;,)\"");
+        // The scan above stops at the first character that cannot be part of a secret, so trailing
+        // punctuation is already excluded and the candidate needs no further trimming.
+        var candidate = span.Slice(startIndex, endIndex - startIndex);
 
         if (candidate.Length <= PrefixLength)
         {
@@ -540,5 +711,42 @@ public static class StripeCliBuilderExtensions
             Task.FromResult(resource.WebhookSigningSecret is not null
                 ? HealthCheckResult.Healthy("Webhook signing secret is available.")
                 : HealthCheckResult.Unhealthy("Waiting for webhook signing secret from Stripe CLI."));
+    }
+
+    internal static void SetWebhookSigningSecret(this IStripeCliResource resource, string signingSecret)
+    {
+        switch (resource)
+        {
+            case StripeCliResource localResource:
+                localResource.WebhookSigningSecret = signingSecret;
+                break;
+            case StripeCliContainerResource containerResource:
+                containerResource.WebhookSigningSecret = signingSecret;
+                break;
+            default:
+                // Failing loudly matters here: silently discarding the secret would leave the health
+                // check permanently unhealthy and any WaitFor on this resource hanging with no diagnostic.
+                throw new NotSupportedException(
+                    $"Cannot set the webhook signing secret on unsupported {nameof(IStripeCliResource)} " +
+                    $"implementation '{resource.GetType().Name}'. Supported types are " +
+                    $"{nameof(StripeCliResource)} and {nameof(StripeCliContainerResource)}.");
+        }
+    }
+
+    /// <summary>
+    /// Defers resolution of the webhook signing secret until the environment is materialized.
+    /// </summary>
+    /// <remarks>
+    /// The secret is scraped from Stripe CLI stdout after the process starts, so it does not exist
+    /// when the app host is built. <see cref="ValueExpression"/> deliberately returns a value-free
+    /// placeholder: it is the manifest-facing template, and the live credential must never be
+    /// serialized into it.
+    /// </remarks>
+    private sealed class WebhookSecretReference(IStripeCliResource resource) : IValueProvider, IManifestExpressionProvider
+    {
+        public ValueTask<string?> GetValueAsync(CancellationToken cancellationToken = default)
+            => new(resource.WebhookSigningSecret);
+
+        public string ValueExpression => $"{{{resource.Name}.webhookSigningSecret}}";
     }
 }
