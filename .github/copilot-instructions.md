@@ -172,12 +172,9 @@ The `.github/workflows/build.yml` workflow:
 
 ### ASP.NET Core Helpers (`Stripe.Extensions.AspNetCore`)
 - Simplifies Stripe webhook handling in ASP.NET Core
-- Two handler base classes:
-  - **`StripeWebhookHandler<T>`** — for Stripe v1 API events (`Event`); uses `EventUtility.ConstructEvent` for signature verification
-  - **`StripeThinEventHandler<T>`** — for Stripe v2 API thin event notifications (`EventNotification`); uses `StripeClient.ParseEventNotification`
-- `MapStripeWebhookHandler<T>` registers v1 event webhook routes (default path: `/stripe/webhook`)
-- `MapStripeThinEventHandler<T>` registers v2 thin event webhook routes (default path: `/stripe/thin-event`)
-- Both support an optional `namedConfiguration` parameter to use a non-default named client
+- **v1 snapshot events**: `StripeWebhookHandler<T>` (uses `EventUtility.ConstructEvent` for signature verification), registered with `MapStripeWebhookHandler<T>` (default path: `/stripe/webhook`). Supports an optional `namedConfiguration` parameter to use a non-default named client
+- **v2 thin events**: DI-registered subscribers implementing `IStripeEventSubscriber<TNotification>`, registered with `AddStripeEventSubscriber<T>()` and mapped with `MapStripeEventNotifications`. Built on the Stripe.net SDK's own `StripeEventNotificationHandler`
+- **`StripeThinEventHandler<T>` / `MapStripeThinEventHandler<T>` are `[Obsolete]`** — superseded by the subscriber model. Do not use in new code or docs; they cover 20 event types where subscribers cover 24
 - **`StripeWebhookContext`**: injected into handlers, provides `HttpContext`, `StripeOptions`, `StripeClient`, and `ILoggerFactory`
 - **`IStripeWebhookExecutor`**: internal interface; both handler bases implement it for route dispatch
 - Automatic webhook signature verification using `StripeOptions.WebhookSecret`
@@ -248,8 +245,8 @@ The `.github/workflows/build.yml` workflow:
 
 **Webhook Handlers**:
 - For **v1 events**: inherit from `StripeWebhookHandler<T>`, register with `MapStripeWebhookHandler<T>("/path")`
-- For **v2 thin events**: inherit from `StripeThinEventHandler<T>`, register with `MapStripeThinEventHandler<T>("/path")`
-- Override specific `On*Async` methods (e.g., `OnCustomerCreatedAsync`) instead of a generic handle method
+- For **v2 thin events**: implement `IStripeEventSubscriber<TNotification>`, register with `AddStripeEventSubscriber<T>()`, and map once with `MapStripeEventNotifications("/path")`
+- For v1 handlers, override specific `On*Async` methods (e.g., `OnCustomerCreatedAsync`) instead of a generic handle method
 - Override `UnknownEventAsync` to handle events not covered by generated overrides
 - Dependencies injected via constructor DI (in addition to the required `StripeWebhookContext` parameter)
 - Handler methods are async: `Task OnEventTypeAsync(EventType @event)`
@@ -258,7 +255,7 @@ The `.github/workflows/build.yml` workflow:
 - `WebhookSecret` must be set in `StripeOptions` — throws `InvalidOperationException` at request time if missing
 
 **Partial Classes & Source Generators**:
-- `StripeWebhookHandler<T>` and `StripeThinEventHandler<T>` are declared `partial` — the source generator contributes `ExecuteAsync` and all `On*Async` method stubs
+- `StripeWebhookHandler<T>` and the obsolete `StripeThinEventHandler<T>` are declared `partial` — the source generator contributes `ExecuteAsync` and all `On*Async` method stubs
 - **User-defined handler classes do NOT need to be partial** — only the base classes are partial
 - Generated method naming: dot/underscore-separated event names are title-cased and wrapped: `payment_intent.created` → `OnPaymentIntentCreatedAsync`
 - Thin event bracket notation: `[requirements]` → `IncludingRequirements`, e.g. `v2.core.account[requirements].updated` → `OnV2CoreAccountIncludingRequirementsUpdatedAsync`

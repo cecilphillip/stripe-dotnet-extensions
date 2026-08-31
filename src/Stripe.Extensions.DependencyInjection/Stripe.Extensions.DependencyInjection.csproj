@@ -3,6 +3,19 @@
   <PropertyGroup>
     <OutputType>Library</OutputType>
     <TargetFrameworks>netstandard2.1;net8.0;net9.0;net10.0</TargetFrameworks>
+    <!--
+      IsAotCompatible is deliberately NOT set: it is a package-level promise that cannot be
+      honoured end to end, because Stripe.net deserializes with reflection.
+      netstandard2.1 also predates the trim and AOT analyzers.
+    -->
+    <!-- Intercepts IConfiguration.Bind with generated, reflection-free binding code. -->
+    <EnableConfigurationBindingGenerator Condition="'$(TargetFramework)' != 'netstandard2.1'">true</EnableConfigurationBindingGenerator>
+    <!--
+      StripeOptions.HttpClient is a Stripe.IHttpClient. It is set in code via AddStripe(o => ...),
+      never from configuration, and an interface has no constructor for the binder to call. The
+      generator reports that it skipped the property; skipping it is the intended behaviour.
+    -->
+    <NoWarn>$(NoWarn);SYSLIB1100;SYSLIB1101</NoWarn>
     <RootNamespace>Stripe.Extensions.DependencyInjection</RootNamespace>
   </PropertyGroup>
   

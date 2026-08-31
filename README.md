@@ -142,12 +142,22 @@ stripe.WithWebhookConnectForwardTo(api);
 // Multiple targets are also supported
 stripe.WithWebhookForwardTo("/webhooks/stripe", api, worker);
 stripe.WithWebhookConnectForwardTo("/webhooks/stripe-connect", api, worker);
+
+// v2 thin events forward to their own endpoint
+stripe.WithThinEventForwardTo(notifications, thinEventPath: "/stripe/thin-events");
 ```
+
+Snapshot (v1) and thin (v2) events must go to **separate endpoints**, but one `stripe listen` session covers both with a single signing secret.
+
+> The Stripe CLI's `--thin-events` flag defaults to `none`, so forwarding without it silently delivers nothing. `WithThinEventForwardTo` therefore always emits it, defaulting to `*`. Narrow it when you want to:
+> ```csharp
+> stripe.WithThinEventForwardTo(notifications, thinEvents: ["v2.core.account.created"]);
+> ```
 
 `WithReference(stripe)` injects the Stripe API key, publishable key, and webhook secret into dependent resources. The webhook secret is resolved when the CLI starts, so dependent resources can use `WaitFor(stripe)` before starting.
 
 For Stripe v1 events, use `MapStripeWebhookHandler<T>()` / `StripeWebhookHandler<T>`.
-For Stripe v2 thin events and snapshot events, use `MapStripeThinEventHandler<T>()` / `StripeThinEventHandler<T>`.
+For Stripe v2 thin events, use `MapStripeEventNotifications()` with [event subscribers](#thin-events-v2).
 
 Retrieving the default client registered with `AddStripe()`: 
 
@@ -218,51 +228,138 @@ app.MapStripeWebhookHandler<MyWebhookHandler>();
 
 ### Thin Events (v2)
 
-Stripe v2 APIs generate [thin events](https://docs.stripe.com/event-destinations#thin-events) - lightweight event notifications that contain only the event type and related object ID. These are strongly-typed in the Stripe SDK.
+Stripe v2 APIs generate [thin events](https://docs.stripe.com/event-destinations#thin-events) —
+lightweight notifications carrying only the event type and the related object's id. These are
+strongly typed in the Stripe SDK.
 
-Create a handler class that inherits from [StripeThinEventHandler](./src/Stripe.Extensions.AspNetCore/StripeThinEventHandler.cs):
+Handle them with **event subscribers**: a small DI-registered class per concern, resolved from the
+request scope. Each subscriber declares the one notification type it handles, so adding an event
+means adding a class rather than editing a shared one.
+
+- Thin events use `EventNotification` types from the `Stripe.Events.*` namespace
+- Each notification provides `FetchEventAsync()` to get the full event with additional data
+- Each notification provides `FetchRelatedObjectAsync()` to fetch the latest version of the related
+  resource. It throws when the event carries no related object, so check
+  `notification.RelatedObject is not null` first
+- Event types this Stripe.net version cannot type arrive as `UnknownEventNotification`
+
+Implement `IStripeEventSubscriber<TNotification>` once per event you care about:
 
 ```csharp
-public class MyThinEventHandler : StripeThinEventHandler<MyThinEventHandler>
-{
-    public MyThinEventHandler(StripeWebhookContext context) : base(context) { }
-    
-    public override async Task OnV1BillingMeterErrorReportTriggeredAsync(
-        V1BillingMeterErrorReportTriggeredEventNotification notification)
-    {
-        // Option 1: Fetch the full event with additional data
-        var fullEvent = await notification.FetchEventAsync();
-        
-        // Option 2: Fetch the related object directly
-        var meter = await notification.FetchRelatedObjectAsync();
-        
-        // Process the event...
-    }
+using Stripe.Events;              // notification types
+using Stripe.Extensions.AspNetCore;
 
-    public override async Task OnV2CoreAccountCreatedAsync(
-        V2CoreAccountCreatedEventNotification notification)
+public sealed class AccountProvisioningSubscriber(IProvisioningService provisioning)
+    : IStripeEventSubscriber<V2CoreAccountCreatedEventNotification>
+{
+    public async ValueTask HandleAsync(
+        V2CoreAccountCreatedEventNotification notification,
+        StripeEventNotificationContext context,
+        CancellationToken cancellationToken)
     {
         var account = await notification.FetchRelatedObjectAsync();
-        // Handle account creation...
+        await provisioning.CreateWorkspaceAsync(account.Id, cancellationToken);
     }
 }
 ```
 
-Register the thin event handler with a separate endpoint:
+Register each subscriber and map one endpoint:
 
 ```csharp
-// Minimal API based apps
-app.MapStripeThinEventHandler<MyThinEventHandler>("/stripe/thin-event");
+builder.Services.AddStripeEventSubscriber<AccountProvisioningSubscriber>();
+builder.Services.AddStripeEventSubscriber<AccountAnalyticsSubscriber>();
 
-// Or with a named configuration
-app.MapStripeThinEventHandler<MyThinEventHandler>("/stripe/thin-event", "client1");
+app.MapStripeEventNotifications("/stripe/thin-events");
 ```
 
-Key differences from snapshot events:
-- Thin events use `EventNotification` types from `Stripe.Events.*` namespace
-- Each notification provides `FetchEventAsync()` to get the full event with additional data
-- Each notification provides `FetchRelatedObjectAsync()` to fetch the latest version of the related resource
-- Unknown event types return `UnknownEventNotification`
+- **Fan-out** — register several subscribers for the same event and all of them run. One failing
+  does not prevent the others, and every failure is reported.
+- **Multiple events per class** — implement the interface more than once on a single class.
+- Constructor injection works normally; subscribers are resolved per request.
+- Registering a subscriber for an event type this Stripe.net version does not know **fails at
+  startup**, not on the first delivery.
+
+#### Events nobody subscribed to
+
+`IStripeUnhandledEventSubscriber` receives every notification that **no typed subscriber claimed**.
+That set shrinks as you add subscribers, so it means "the events this app has not accounted for",
+not "all events".
+
+That is the difference from a catch-all. A catch-all would be
+`IStripeEventSubscriber<EventNotification>` — subscribing to the base type to receive *everything*,
+including events a typed subscriber already handles. That is rejected at startup, because it would
+make delivery to a given subscriber depend on what other subscribers happen to be registered:
+
+```
+'MySubscriber' subscribes to 'EventNotification', which is not a specific event type.
+Subscribers are dispatched per event type, so this would never be invoked.
+Implement 'IStripeUnhandledEventSubscriber' to handle notifications that no typed subscriber claims.
+```
+
+The two are separate interfaces with different context types, so the distinction is enforced by the
+compiler rather than by convention:
+
+```csharp
+public sealed class UnhandledEventAuditSubscriber(ILogger<UnhandledEventAuditSubscriber> log)
+    : IStripeUnhandledEventSubscriber
+{
+    public ValueTask HandleAsync(
+        StripeUnhandledEventNotificationContext context,
+        CancellationToken cancellationToken)
+    {
+        // IsKnownEventType is false only when this Stripe.net version cannot type the event
+        // at all - a precise "the SDK is behind the API" signal.
+        log.LogWarning("{Type} unhandled (known: {Known})",
+            context.Notification.Type, context.Details.IsKnownEventType);
+        return ValueTask.CompletedTask;
+    }
+}
+```
+
+If **no `IStripeUnhandledEventSubscriber` is registered at all**, the library logs a warning for each
+such notification instead, so unclaimed events are never silently dropped. Registering one replaces
+that warning with your own handling.
+
+#### Skipping duplicate deliveries
+
+Stripe retries, so the same notification id can arrive twice. `ShouldDispatchAsync` runs after
+parsing and signature verification but before any subscriber. Return `false` to skip dispatch; the
+endpoint still answers 202 so Stripe stops retrying:
+
+```csharp
+app.MapStripeEventNotifications("/stripe/thin-events", options =>
+{
+    options.ShouldDispatchAsync = async (context, cancellationToken) =>
+        await store.TryMarkSeenAsync(context.Notification.Id, cancellationToken);
+});
+```
+
+#### Observing the outcome
+
+There is no "post-handle" callback. The endpoint returns an `IEndpointConventionBuilder`, so ASP.NET Core
+filters already wrap it - they compose, resolve services, and can rewrite the response. The one
+thing a filter cannot work out for itself is what the endpoint decided, so the endpoint publishes
+a `StripeEventNotificationResult` on `HttpContext.Features`:
+
+```csharp
+using Microsoft.AspNetCore.Http; // AddEndpointFilter lives here
+
+app.MapStripeEventNotifications("/stripe/thin-events")
+   .AddEndpointFilter(async (context, next) =>
+   {
+       var response = await next(context);
+       var result = context.HttpContext.Features.Get<StripeEventNotificationResult>();
+       metrics.Record(result?.EventType, result?.Outcome);
+       return response;
+   });
+```
+
+`Outcome` is `Rejected` (400), `Skipped` (202, the gate declined), `Dispatched` (202) or `Failed`
+(500). The feature is set before the body is read, so it is present even when the request is
+rejected - `EventType` is simply `null` because nothing parsed. On `Failed`, `Exception` is an
+`AggregateException` holding every subscriber failure, not just the first.
+
+A complete worked example lives in [samples/SampleEventNotifications](./samples/SampleEventNotifications).
 
 ### Dependency Injection in StripeWebhookHandler
 
