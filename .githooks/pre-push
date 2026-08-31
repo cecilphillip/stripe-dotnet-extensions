@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+#
+# Runs the release gate when a tag is being pushed.
+#
+# Tagging is the point of no return: once a tag reaches GitHub, the release and the
+# published package follow from it. Version 0.6.4 was tagged and published from a state
+# nobody had verified end to end. This makes that verification automatic.
+#
+# Install with `just install-hooks`. Bypass with `git push --no-verify` if you must.
+
+set -euo pipefail
+
+pushing_a_tag=false
+
+# stdin gives one line per ref: <local ref> <local sha> <remote ref> <remote sha>
+while read -r local_ref _ _ _; do
+    case "$local_ref" in
+        refs/tags/*) pushing_a_tag=true ;;
+    esac
+done
+
+if [ "$pushing_a_tag" = false ]; then
+    exit 0
+fi
+
+if ! command -v just >/dev/null 2>&1; then
+    echo "pre-push: 'just' not found; cannot run the release gate." >&2
+    echo "          Install it, or push with --no-verify if this is deliberate." >&2
+    exit 1
+fi
+
+echo "pre-push: tag detected, running 'just release-check'..."
+echo "          (skip with 'git push --no-verify')"
+echo ""
+
+if ! just release-check; then
+    echo "" >&2
+    echo "❌ pre-push: release-check failed. Tag not pushed." >&2
+    echo "   See RELEASING.md." >&2
+    exit 1
+fi
+
+echo ""
+echo "✓ pre-push: release-check passed."

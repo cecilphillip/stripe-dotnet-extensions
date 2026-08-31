@@ -27,6 +27,15 @@ brew install just
 just --version
 ```
 
+### Install git hooks
+```bash
+just install-hooks
+```
+
+Points `core.hooksPath` at the tracked `.githooks` directory. The `pre-push` hook runs
+`just release-check` when you push a tag, so a release cannot be cut from an unverified tree.
+It does nothing on ordinary branch pushes.
+
 ## Building
 
 ### Using Just (Recommended)
@@ -76,6 +85,24 @@ just test-filter "Stripe.Extensions.DependencyInjection.Tests.ServiceCollectionE
 just test-coverage
 ```
 
+### Documentation samples
+
+Every fenced ` ```csharp ` block in `README.md` and the sample READMEs is compiled against the real
+assemblies by `tests/Stripe.Extensions.Docs.Tests`. A snippet with a wrong method name, a wrong
+namespace, or a missing `return` fails the build like any other code.
+
+```bash
+just verify-docs
+```
+
+If you add a documentation file, add it to `MarkdownSampleLoader.DocumentedFiles`. If a block truly
+cannot compile, opt it out with a reason on the line above the fence — it is invisible when
+rendered:
+
+```text
+<!-- docs-verify: skip illustrative fragment, no surrounding type -->
+```
+
 ## Project Structure
 
 ```
@@ -119,11 +146,13 @@ Versions are managed automatically using [MinVer](https://github.com/adamralph/m
 - Pre-release versions are automatically generated from commits since the last tag
 - No manual version bumping needed—create a git tag to release a new version
 
+See [RELEASING.md](RELEASING.md) for the release gate (`just release-check`) and the rules that
+must be followed before tagging.
+
 ## CI/CD
 
 GitHub Actions automatically:
-- Builds on push to main
-- Runs all tests across Windows, macOS, and Linux
+- Builds and runs the full test suite on ubuntu-latest and macOS-latest on push to main
 - Creates NuGet packages
 - Publishes packages when triggered manually
 

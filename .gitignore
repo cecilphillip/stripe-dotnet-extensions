@@ -366,3 +366,6 @@ samples/**/.aspire
 # GitHub Copilot skills: only project-owned skills are tracked; the rest are local to a machine.
 .github/skills/*
 !.github/skills/dotnet-inspect/
+
+# Release notes fetched from GitHub for compile verification (see verify-release-notes.yml)
+/release-notes.md

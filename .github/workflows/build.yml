@@ -57,8 +57,10 @@ jobs:
     - name: Setup Just
       uses: extractions/setup-just@v2
 
-    - name: Build
-      run: just build
+    - name: Build and test
+      # `just test` builds first, then runs every test project in the solution,
+      # including the documentation sample compiler.
+      run: just test
 
   package:
     name: Create NuGet Packages
@@ -104,13 +106,38 @@ jobs:
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 0 # Tags are needed to verify this commit is released
 
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: '10.0.x'
         dotnet-quality: 'ga'
-    
+
+    - name: Restore .NET local tools
+      run: dotnet tool restore
+
+    # 0.6.4 was published from a commit whose release notes had never been compiled.
+    # Requiring a tag means the release exists first, which is what triggers
+    # verify-release-notes.yml. Publishing an untagged commit skips that check entirely.
+    - name: Require a release tag on this commit
+      run: |
+        set -euo pipefail
+        tag="$(git tag --points-at HEAD | head -n1)"
+        if [ -z "$tag" ]; then
+          echo "❌ $(git rev-parse --short HEAD) is not tagged; refusing to publish."
+          echo "   Tag the commit and push the tag, then re-run."
+          exit 1
+        fi
+
+        version="$(dotnet tool run minver -- --default-pre-release-identifiers preview)"
+        if [ "$tag" != "$version" ]; then
+          echo "❌ Tag '$tag' does not match the computed version '$version'."
+          exit 1
+        fi
+        echo "✓ Publishing $version from tag $tag"
+
     - name: Download packages
       uses: actions/download-artifact@v4
       with:

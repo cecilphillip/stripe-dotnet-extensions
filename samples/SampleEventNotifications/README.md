@@ -34,6 +34,7 @@ public sealed class UnhandledEventAuditSubscriber : IStripeUnhandledEventSubscri
     {
         // context.Details.IsKnownEventType is false only when this Stripe.net version
         // cannot type the event at all — a precise "the SDK is behind the API" signal.
+        return ValueTask.CompletedTask;
     }
 }
 ```
@@ -110,7 +111,9 @@ dotnet run
 The AppHost wires this with:
 
 ```csharp
-.WithThinEventForwardTo(notifications, thinEventPath: "/stripe/thin-events")
+var stripeCli = builder.AddStripeCliContainer("stripe-cli", apiKey: stripeApiKey)
+    .WithWebhookForwardTo(checkout, webhookPath: "/stripe/webhook")
+    .WithThinEventForwardTo(notifications, thinEventPath: "/stripe/thin-events");
 ```
 
 > `stripe listen` defaults `--thin-events` to `none`, so `--forward-thin-to` alone forwards nothing.

@@ -110,6 +110,12 @@ restore:
     @echo "Restoring NuGet packages..."
     @dotnet restore
 
+# Point git at the tracked hooks in .githooks (runs release-check before pushing a tag)
+install-hooks:
+    @git config core.hooksPath .githooks
+    @chmod +x .githooks/*
+    @echo "✓ git hooks installed from .githooks"
+
 # Build the solution (Release configuration)
 build: restore
     @echo "Building Stripe.Extensions solution..."
@@ -138,6 +144,21 @@ test-coverage: build
 test-filter filter: build
     @echo "Running filtered test: {{ filter }}"
     @dotnet test --configuration Release --no-build --filter "{{ filter }}"
+
+# Compile every C# sample in the documentation against the real assemblies
+verify-docs: build
+    @echo "Verifying documentation samples..."
+    @dotnet test {{ TESTS_DIR }}/Stripe.Extensions.Docs.Tests/Stripe.Extensions.Docs.Tests.csproj \
+        --configuration Release --no-build --verbosity normal
+
+# Compile the C# samples in a release-notes file before publishing it.
+# Release notes are published to GitHub, so they are not covered by `verify-docs`.
+# Usage: just verify-notes notes.md
+verify-notes FILE: build
+    @echo "Verifying samples in {{ FILE }}..."
+    @DOCS_VERIFY_EXTRA_FILES="$(cd "$(dirname {{ FILE }})" && pwd)/$(basename {{ FILE }})" \
+        dotnet test {{ TESTS_DIR }}/Stripe.Extensions.Docs.Tests/Stripe.Extensions.Docs.Tests.csproj \
+        --configuration Release --no-build --verbosity normal
 
 # ==============================================================================
 # PACKAGE & PUBLISH
@@ -217,3 +238,48 @@ validate: build test
 # Full CI pipeline: clean, build, test, pack
 ci: clean build test pack
     @echo "✓ CI pipeline completed successfully"
+
+# ==============================================================================
+# RELEASE GATE
+# ==============================================================================
+
+# Must pass before tagging a release. See RELEASING.md for the full checklist.
+#
+# Starts from clean on purpose: a stale obj/ directory once hid a dropped
+# ProjectReference through a green `just build` and `just test`, and only
+# surfaced during `just pack`.
+release-check:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    echo "=== 1/5 Clean ==="
+    just -q clean
+
+    echo "=== 2/5 Build (warnings are errors) ==="
+    dotnet restore
+    dotnet build --configuration Release --no-restore -warnaserror
+
+    echo "=== 3/5 Tests, including documentation samples ==="
+    dotnet test --configuration Release --no-build --verbosity normal
+
+    echo "=== 4/5 Pack ==="
+    mkdir -p {{ PACKAGES_DIR }}
+    dotnet pack --configuration Release --no-build \
+        --output {{ PACKAGES_DIR }} \
+        -p:Version={{ version }} \
+        -p:RepositoryUrl="https://github.com/cecilphillip/stripe-dotnet-extensions"
+
+    echo "=== 5/5 Working tree ==="
+    # Packing regenerates files, and an editor with stale buffers has silently
+    # reverted tracked files after a commit before. Anything dirty here means the
+    # bytes about to be tagged are not the bytes that were just verified.
+    if [ -n "$(git status --porcelain)" ]; then
+        echo "❌ Working tree is dirty after a full verification run:"
+        git status --short
+        exit 1
+    fi
+
+    echo ""
+    echo "✓ release-check passed for version {{ version }}"
+    echo "  Packages: $(ls {{ PACKAGES_DIR }}/*.nupkg | wc -l | tr -d ' ')"
+    echo "  Commit:   $(git rev-parse --short HEAD)"

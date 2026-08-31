@@ -173,8 +173,8 @@ public class HomeController : Controller
     
     public async Task<IActionResult> Index()
     {        
-        var customer = await _stripeClient.V1.Customers.GetAsync("cus_NffrFeUfNV2Hib");        
-        ...
+        var customer = await _stripeClient.V1.Customers.GetAsync("cus_NffrFeUfNV2Hib");
+        // use the customer
         return View();
     } 
 }
@@ -205,14 +205,15 @@ Create a handler class that inherits from [StripeWebhookHandler](./src/Stripe.Ex
 To handle an event override the corresponding `On*Async` method.
 
 ```csharp
-public class MyWebhookHandler: StripeWebhookHandler<MyWebhookHandler>();
+public class MyWebhookHandler : StripeWebhookHandler<MyWebhookHandler>
 {
     public MyWebhookHandler(StripeWebhookContext context) : base(context) {}
-    
+
     public override Task OnCustomerCreatedAsync(Event e)
     {
-        // handle customer.create event
-        var customer = (e.Data.Object as Customer);        
+        // handle customer.created event
+        var customer = (Customer)e.Data.Object;
+        return Task.CompletedTask;
     }
 }
 ```
@@ -366,10 +367,11 @@ A complete worked example lives in [samples/SampleEventNotifications](./samples/
 The `StripeWebhookHandler` also supports constructor dependency injection, so Stripe or other services can be injected by defining them as constructor parameters.
 
 ```csharp
-public class MyWebhookHandler: StripeWebhookHandler<MyWebhookHandler>
+public class MyWebhookHandler : StripeWebhookHandler<MyWebhookHandler>
 {
     private readonly IMyService _myService;
-    public MyWebhookHandler(IMyService myService, StripeWebhookContext context) : base(context) {}
+
+    public MyWebhookHandler(IMyService myService, StripeWebhookContext context) : base(context)
     {
         _myService = myService;
     }
@@ -377,6 +379,9 @@ public class MyWebhookHandler: StripeWebhookHandler<MyWebhookHandler>
     public override async Task OnCustomerCreatedAsync(Event e)
     {
         Customer customer = (Customer)e.Data.Object;
+
+        await _myService.RecordAsync(customer.Id);
+
         await Context.Client.V1.Customers.UpdateAsync(customer.Id, new CustomerUpdateOptions()
         {
             Description = "New customer"
@@ -387,38 +392,46 @@ public class MyWebhookHandler: StripeWebhookHandler<MyWebhookHandler>
 
 ## Unit testing
 
-The `StripeWebhookHandler` also simplifies unit testing of webhook handling logic.
-For example, here is how a unit-test might be written to test the logic of the handler from the previous section:
+`StripeWebhookHandler` simplifies unit testing because the `On*Async` methods can be invoked
+directly — no HTTP request, signature header, or webhook secret required. Construct a
+`StripeWebhookContext` yourself and pass it to the handler:
 
 ```csharp
-[Fact]
-public async Task UpdatesCustomerOnCreation()
+public class CustomerAuditHandler : StripeWebhookHandler<CustomerAuditHandler>
 {
-    var serviceMock = new Mock<CustomerService>();
-    var handler = new MyWebhookHandler(serviceMock.Object);
-    // Prepare the event
-    var e = new Event()
-    {
-        Data = new EventData()
-        {
-            Object = new Customer()
-            {
-                Id = "cus_123"
-            }
-        }
-    };
+    private readonly IMyService _myService;
 
-    // Invoke the handler
+    public CustomerAuditHandler(IMyService myService, StripeWebhookContext context) : base(context)
+    {
+        _myService = myService;
+    }
+
+    public override async Task OnCustomerCreatedAsync(Event e)
+        => await _myService.RecordAsync(((Customer)e.Data.Object).Id);
+}
+
+[Fact]
+public async Task RecordsCustomerOnCreation()
+{
+    var service = new FakeMyService();
+    var context = new StripeWebhookContext(
+        new DefaultHttpContext(),
+        new StripeOptions(),
+        new StripeClient("sk_test_123"),
+        NullLoggerFactory.Instance);
+
+    var handler = new CustomerAuditHandler(service, context);
+
+    var e = new Event { Data = new EventData { Object = new Customer { Id = "cus_123" } } };
     await handler.OnCustomerCreatedAsync(e);
 
-    // Verify that the customer was updated with a new description
-    serviceMock.Verify(s => s.UpdateAsync(
-        "cus_123",
-        It.Is<CustomerUpdateOptions>(o => o.Description == "New customer"),
-        It.IsAny<RequestOptions>(),
-        It.IsAny<CancellationToken>()));
+    Assert.Equal(new[] { "cus_123" }, service.Recorded);
 }
 ```
+
+Assert against your own injected dependencies. Handler logic that calls Stripe through
+`Context.Client` reaches the real API, so keep those calls behind a service you can substitute,
+or exercise them with an integration test instead.
 
 ## Aspire Integration
 
