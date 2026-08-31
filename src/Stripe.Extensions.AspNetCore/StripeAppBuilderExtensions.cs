@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.Builder;
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
@@ -10,7 +11,22 @@ namespace Stripe.Extensions.AspNetCore;
 
 public static class StripeAppBuilderExtensions
 {
-    public static IEndpointRouteBuilder MapStripeWebhookHandler<T>(this IEndpointRouteBuilder endpointRouteBuilder,
+    // Minimal API's MapPost(IEndpointRouteBuilder, string, Delegate) is itself annotated
+    // [RequiresUnreferencedCode] and [RequiresDynamicCode], so no endpoint mapped this way can be
+    // trim- or AOT-safe regardless of what this library does. Handler activation additionally
+    // resolves a constructor at runtime. Declaring that here turns a runtime failure in a trimmed
+    // or AOT-published app into a build-time warning.
+    private const string TrimmingMessage =
+        "Stripe webhook endpoints activate handler types at runtime and Minimal API endpoint " +
+        "mapping itself requires unreferenced code. This API is not compatible with trimming.";
+
+    private const string AotMessage =
+        "Minimal API endpoint mapping requires dynamic code. This API is not compatible with " +
+        "native AOT.";
+
+    public static IEndpointRouteBuilder MapStripeWebhookHandler<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] T>(
+        this IEndpointRouteBuilder endpointRouteBuilder,
         string pattern = "/stripe/webhook")
         where T : StripeWebhookHandler<T>
     {
@@ -20,12 +36,15 @@ public static class StripeAppBuilderExtensions
             StripeOptions.DefaultClientConfigurationSectionName);
     }
 
-    public static IEndpointRouteBuilder MapStripeWebhookHandler<T>(this IEndpointRouteBuilder endpointRouteBuilder,
+    public static IEndpointRouteBuilder MapStripeWebhookHandler<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] T>(
+        this IEndpointRouteBuilder endpointRouteBuilder,
         string pattern, string namedConfiguration)
         where T : StripeWebhookHandler<T>
     {
         ArgumentNullException.ThrowIfNull(pattern);
         ArgumentNullException.ThrowIfNull(namedConfiguration);
+        StripeSerializationGuard.EnsureReflectionSerializationEnabled();
 
         var handlerFactory = ActivatorUtilities.CreateFactory(typeof(T), [typeof(StripeWebhookContext)]);
         var requestDelegate = CreateWebhookDelegate<T>(namedConfiguration, handlerFactory);
@@ -41,7 +60,11 @@ public static class StripeAppBuilderExtensions
     /// <param name="endpointRouteBuilder">The endpoint route builder.</param>
     /// <param name="pattern">The route pattern. Defaults to "/stripe/thin-event".</param>
     /// <returns>The endpoint route builder for chaining.</returns>
-    public static IEndpointRouteBuilder MapStripeThinEventHandler<T>(this IEndpointRouteBuilder endpointRouteBuilder,
+    [Obsolete("Use MapStripeEventNotifications with IStripeEventSubscriber<TNotification> instead. " +
+              "See the 'Event subscribers (v2 thin events)' section of the README.")]
+    public static IEndpointRouteBuilder MapStripeThinEventHandler<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] T>(
+        this IEndpointRouteBuilder endpointRouteBuilder,
         string pattern = "/stripe/thin-event")
         where T : StripeThinEventHandler<T>
     {
@@ -59,12 +82,17 @@ public static class StripeAppBuilderExtensions
     /// <param name="pattern">The route pattern.</param>
     /// <param name="namedConfiguration">The named Stripe configuration to use.</param>
     /// <returns>The endpoint route builder for chaining.</returns>
-    public static IEndpointRouteBuilder MapStripeThinEventHandler<T>(this IEndpointRouteBuilder endpointRouteBuilder,
+    [Obsolete("Use MapStripeEventNotifications with IStripeEventSubscriber<TNotification> instead. " +
+              "See the 'Event subscribers (v2 thin events)' section of the README.")]
+    public static IEndpointRouteBuilder MapStripeThinEventHandler<
+        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] T>(
+        this IEndpointRouteBuilder endpointRouteBuilder,
         string pattern, string namedConfiguration)
         where T : StripeThinEventHandler<T>
     {
         ArgumentNullException.ThrowIfNull(pattern);
         ArgumentNullException.ThrowIfNull(namedConfiguration);
+        StripeSerializationGuard.EnsureReflectionSerializationEnabled();
 
         var handlerFactory = ActivatorUtilities.CreateFactory(typeof(T), [typeof(StripeWebhookContext)]);
         var requestDelegate = CreateWebhookDelegate<T>(namedConfiguration, handlerFactory);
@@ -73,7 +101,7 @@ public static class StripeAppBuilderExtensions
         return endpointRouteBuilder;
     }
 
-    private static Delegate CreateWebhookDelegate<T>(
+    private static RequestDelegate CreateWebhookDelegate<T>(
         string namedConfiguration,
         ObjectFactory handlerFactory)
         where T : class, IStripeWebhookExecutor
@@ -88,7 +116,11 @@ public static class StripeAppBuilderExtensions
             var stripeWebhookContext = new StripeWebhookContext(context, options, stripeClient, loggerFactory);
             var handler = (IStripeWebhookExecutor)handlerFactory(context.RequestServices, [stripeWebhookContext]);
             var result = await handler.ExecuteAsync().ConfigureAwait(false);
-            return result;
+
+            // Executing the IResult here keeps this a RequestDelegate. Returning it instead would
+            // select MapPost's Delegate overload, which binds parameters and results reflectively
+            // and is annotated RequiresUnreferencedCode/RequiresDynamicCode.
+            await result.ExecuteAsync(context).ConfigureAwait(false);
         };
     }
 }

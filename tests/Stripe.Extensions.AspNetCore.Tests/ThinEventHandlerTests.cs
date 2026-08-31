@@ -30,7 +30,9 @@ public class ThinEventHandlerTests
         builder.Services.AddStripe(configureOptions: configureOptions);
 
         var app = builder.Build();
+#pragma warning disable CS0618 // These tests intentionally cover the obsolete handler.
         app.MapStripeThinEventHandler<MockThinHandler>();
+#pragma warning restore CS0618
 
         return app;
     }
@@ -248,7 +250,9 @@ public class ThinEventHandlerTests
         await app.StopAsync();
     }
 
+#pragma warning disable CS0618 // These tests intentionally cover the obsolete handler.
     private class MockThinHandler : StripeThinEventHandler<MockThinHandler>
+#pragma warning restore CS0618
     {
         private readonly List<EventNotification> _invocations;
 

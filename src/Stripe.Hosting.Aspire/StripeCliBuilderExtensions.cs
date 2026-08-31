@@ -18,6 +18,7 @@ public static class StripeCliBuilderExtensions
 {
     private const string DefaultWebhookPath = "/webhooks/stripe";
     private const string DefaultConnectWebhookPath = "/webhooks/stripe-connect";
+    private const string DefaultThinEventPath = "/webhooks/stripe-thin";
     private const string DefaultWebhookSecretEnvVar = "STRIPE_WEBHOOK_SECRET";
     private const string SecretKeyEnvVar = "STRIPE_SECRET_KEY";
     private const string PublishableKeyEnvVar = "STRIPE_PUBLISHABLE_KEY";
@@ -278,6 +279,101 @@ public static class StripeCliBuilderExtensions
     private const string DefaultClientName = "Default";
 
     /// <summary>
+    /// Configures the Stripe CLI to forward v2 API thin events to the specified endpoint using
+    /// <c>--forward-thin-to</c>.
+    /// </summary>
+    /// <remarks>
+    /// Thin events are delivered separately from snapshot (v1) events and must be sent to their own
+    /// endpoint. Combine this with <see cref="WithWebhookForwardTo{T, TTarget}"/> when an
+    /// application handles both families.
+    /// <para>
+    /// The Stripe CLI listens for <b>no</b> thin events by default, so this method always emits
+    /// <c>--thin-events</c>. Leaving <paramref name="thinEvents"/> unset subscribes to all of them
+    /// via <c>*</c>; without that flag the CLI would forward nothing.
+    /// </para>
+    /// <para>
+    /// Calling this method more than once adds a <c>--forward-thin-to</c> flag per target while
+    /// emitting the session-wide <c>--thin-events</c> and <c>--skip-verify</c> flags only once.
+    /// The CLI keeps one subscription list per <c>listen</c> session, so events cannot be filtered
+    /// per target: <paramref name="thinEvents"/> is unioned across calls, leaving it unset on any
+    /// call widens the session to all events, and <paramref name="skipVerify"/> applies if any call
+    /// requests it.
+    /// </para>
+    /// </remarks>
+    /// <typeparam name="T">The Stripe CLI resource type.</typeparam>
+    /// <typeparam name="TTarget">The target resource type with endpoints.</typeparam>
+    /// <param name="builder">The Stripe CLI resource builder.</param>
+    /// <param name="forwardTo">The Aspire resource to forward thin events to.</param>
+    /// <param name="thinEventPath">The path on the target resource's endpoint. Defaults to <c>/webhooks/stripe-thin</c>.</param>
+    /// <param name="thinEvents">Specific thin event types to listen for. Defaults to all events.</param>
+    /// <param name="skipVerify">When <c>true</c>, passes <c>--skip-verify</c> to skip SSL certificate verification.</param>
+    /// <returns>A reference to the <see cref="IResourceBuilder{T}"/>.</returns>
+    [AspireExport("withThinEventForwardTo", Description = "Configures Stripe CLI to forward v2 thin events to the specified endpoint")]
+    public static IResourceBuilder<T> WithThinEventForwardTo<T, TTarget>(
+        this IResourceBuilder<T> builder,
+        IResourceBuilder<TTarget> forwardTo,
+        string thinEventPath = DefaultThinEventPath,
+        IEnumerable<string>? thinEvents = null,
+        bool skipVerify = false)
+        where T : IResource, IStripeCliResource
+        where TTarget : IResourceWithEndpoints
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentNullException.ThrowIfNull(forwardTo);
+
+        var stripeResource = builder.Resource;
+        builder.WithArgs(context =>
+        {
+            context.Args.Add("--forward-thin-to");
+            context.Args.Add(BuildForwardToUrl(stripeResource, forwardTo.Resource, thinEventPath));
+        });
+
+        AppendThinEventOptions(builder, thinEvents, skipVerify);
+        return builder.EnsureWebhookSigningSecretResolver();
+    }
+
+    /// <summary>
+    /// Configures the Stripe CLI to forward v2 API thin events to multiple endpoints.
+    /// Each resource in <paramref name="forwardTo"/> generates a separate <c>--forward-thin-to</c> flag.
+    /// </summary>
+    /// <typeparam name="T">The Stripe CLI resource type.</typeparam>
+    /// <param name="builder">The Stripe CLI resource builder.</param>
+    /// <param name="thinEventPath">The path on each target resource's endpoint.</param>
+    /// <param name="forwardTo">One or more Aspire resources to forward thin events to.</param>
+    /// <returns>A reference to the <see cref="IResourceBuilder{T}"/>.</returns>
+    [AspireExport("withThinEventForwardTo", Description = "Configures Stripe CLI to forward v2 thin events to multiple endpoints")]
+    public static IResourceBuilder<T> WithThinEventForwardTo<T>(
+        this IResourceBuilder<T> builder,
+        string thinEventPath,
+        params IResourceBuilder<IResourceWithEndpoints>[] forwardTo)
+        where T : IResource, IStripeCliResource
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentException.ThrowIfNullOrEmpty(thinEventPath);
+        ArgumentNullException.ThrowIfNull(forwardTo);
+
+        if (forwardTo.Length == 0)
+        {
+            throw new ArgumentException("At least one forward-thin-to target must be specified.", nameof(forwardTo));
+        }
+
+        var stripeResource = builder.Resource;
+        foreach (var target in forwardTo)
+        {
+            var capturedTarget = target;
+            builder.WithArgs(context =>
+            {
+                context.Args.Add("--forward-thin-to");
+                context.Args.Add(BuildForwardToUrl(stripeResource, capturedTarget.Resource, thinEventPath));
+            });
+        }
+
+        AppendThinEventOptions(builder, thinEvents: null, skipVerify: false);
+        return builder.EnsureWebhookSigningSecretResolver();
+    }
+
+
+    /// <summary>
     /// Adds a reference to a Stripe CLI resource, injecting Stripe credentials as environment
     /// variables into the destination resource.
     /// <para>
@@ -391,6 +487,68 @@ public static class StripeCliBuilderExtensions
         {
             builder.WithArgs("--skip-verify");
         }
+    }
+
+    private static void AppendThinEventOptions<T>(
+        IResourceBuilder<T> builder,
+        IEnumerable<string>? thinEvents,
+        bool skipVerify)
+        where T : IResource, IStripeCliResource
+    {
+        // "--thin-events" and "--skip-verify" are session-wide flags on `stripe listen`, not
+        // per-target ones, so they are accumulated here and emitted exactly once however many
+        // forward targets are configured. Emitting them per call would repeat them, and because
+        // "--thin-events" is a Go StringSlice flag (repeats append), a narrow filter from one call
+        // would be silently widened by a later call's default of "*".
+        var options = builder.Resource.Annotations.OfType<StripeThinEventOptionsAnnotation>().SingleOrDefault();
+        var isFirstCall = options is null;
+
+        if (options is null)
+        {
+            options = new StripeThinEventOptionsAnnotation();
+            builder.Resource.Annotations.Add(options);
+        }
+
+        options.SkipVerify |= skipVerify;
+
+        // An unset filter is documented as "all events". With one session-wide subscription list
+        // there is no way to give one target everything and another a subset, so honour the broader
+        // request: extra events are simply left unclaimed by the endpoint, whereas narrowing would
+        // silently drop events the target asked for.
+        var requested = thinEvents?.Where(e => !string.IsNullOrWhiteSpace(e)).ToArray() ?? [];
+        if (requested.Length == 0)
+        {
+            options.SubscribeToAllThinEvents = true;
+        }
+
+        foreach (var thinEvent in requested)
+        {
+            if (!options.ThinEvents.Contains(thinEvent))
+            {
+                options.ThinEvents.Add(thinEvent);
+            }
+        }
+
+        if (!isFirstCall)
+        {
+            return;
+        }
+
+        // Deferred so later calls can still contribute to the same accumulated options.
+        builder.WithArgs(context =>
+        {
+            // "--thin-events" defaults to none in the Stripe CLI, so it is always emitted: omitting
+            // it would leave "--forward-thin-to" configured but silently receiving nothing.
+            context.Args.Add("--thin-events");
+            context.Args.Add(options.SubscribeToAllThinEvents || options.ThinEvents.Count == 0
+                ? "*"
+                : string.Join(",", options.ThinEvents));
+
+            if (options.SkipVerify)
+            {
+                context.Args.Add("--skip-verify");
+            }
+        });
     }
 
     private static string BuildForwardToUrl(IResource stripeResource, IResourceWithEndpoints targetResource, string webhookPath)

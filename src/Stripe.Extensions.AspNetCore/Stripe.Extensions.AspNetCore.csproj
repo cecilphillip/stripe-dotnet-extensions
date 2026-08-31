@@ -4,6 +4,11 @@
     <OutputType>Library</OutputType>
     <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
     <RootNamespace>Stripe.Extensions.AspNetCore</RootNamespace>
+    <!--
+      IsAotCompatible is deliberately NOT set. It is a package-level promise, and it cannot be
+      honoured end to end: Stripe.net deserializes with reflection, which Native AOT disables.
+      Setting it would advertise a guarantee that fails at runtime. See StripeSerializationGuard.
+    -->
   </PropertyGroup>
   
   <PropertyGroup>
@@ -15,6 +20,10 @@
 
   <ItemGroup>
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Stripe.Extensions.AspNetCore.Tests" />
   </ItemGroup>
 
   <ItemGroup>

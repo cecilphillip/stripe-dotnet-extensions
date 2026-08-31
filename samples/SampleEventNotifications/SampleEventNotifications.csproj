@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <UserSecretsId>stripe-dotnet-extensions-sample-event-notifications</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Stripe.Extensions.DependencyInjection\Stripe.Extensions.DependencyInjection.csproj" />
+    <ProjectReference Include="..\..\src\Stripe.Extensions.AspNetCore\Stripe.Extensions.AspNetCore.csproj" />
+  </ItemGroup>
+
+</Project>
