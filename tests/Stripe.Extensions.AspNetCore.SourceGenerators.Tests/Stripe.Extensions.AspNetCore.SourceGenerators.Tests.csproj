@@ -16,12 +16,12 @@
         </PackageReference>
         <PackageReference Include="Microsoft.CodeAnalysis.CSharp.SourceGenerators.Testing.XUnit" Version="1.1.2" />
         <!--
-          The testing package above transitively pins Roslyn 3.8.0, which conflicts with the Roslyn 5.0.0
-          the generator builds against. These references unify the graph on 5.0.0 for the test host only;
+          The testing package above transitively pins Roslyn 3.8.0, which conflicts with the Roslyn 5.3.0
+          the generator builds against. These references unify the graph on 5.3.0 for the test host only;
           the generator itself must not reference Workspaces (see RS1038).
         -->
-        <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="5.0.0" />
-        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.9.0" />
+        <PackageReference Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="5.3.0" />
+        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.10.1" />
         <PackageReference Include="xunit" Version="2.9.3" />
         <PackageReference Include="xunit.runner.visualstudio" Version="4.0.0">
           <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
