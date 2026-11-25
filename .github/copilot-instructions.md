@@ -120,7 +120,7 @@ just test-coverage     # With code coverage
 
 **Publishing**:
 - **NuGet.org**: `just publish-nuget` (requires `NUGET_API_KEY` environment variable)
-- **GitHub Registry**: use the GitHub Actions publish workflow
+- **GitHub Actions**: select `NuGet` to publish to NuGet.org, or `None` (default) to build without publishing. GitHub Packages publishing is not supported.
 
 ## Build Configuration
 
@@ -147,7 +147,7 @@ The `.github/workflows/build.yml` workflow:
 - **Triggers**: Push to `main`, or `workflow_dispatch` (manual) for publishing
 - **Build job**: Runs on both `ubuntu-latest` and `macOS-latest` with .NET 10
 - **Package job**: Creates NuGet packages on `ubuntu-latest`; uploads as workflow artifacts
-- **Publish job**: Triggered only by `workflow_dispatch` from `main`; publishes to GitHub or NuGet based on user input (`packregistry` choice)
+- **Publish job**: Triggered only by `workflow_dispatch` from `main` with `packregistry` set to `NuGet`; `None` (default) skips the publish job
 - Requires `fetch-depth: 0` for MinVer to compute version from full git history
 
 **Output Artifacts**:
