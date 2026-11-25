@@ -11,9 +11,6 @@ PACKAGES_DIR := ARTIFACTS_DIR / "packages"
 # Default shell for recipes (bash with error handling)
 set shell := ["bash", "-c"]
 
-# Extract version from MinVer
-version := `dotnet tool run minver --default-pre-release-identifiers preview`
-
 # OpenAPI spec settings for source generator
 OPENAPI_URL := "https://raw.githubusercontent.com/stripe/openapi/refs/heads/master/latest/openapi.spec3.sdk.json"
 SG_SPEC := SG_DIR / "stripeapi.spec3.sdk.json"
@@ -167,16 +164,19 @@ verify-notes FILE: build
 
 # Create NuGet packages (Release configuration)
 pack: clean build
-    @echo "Creating NuGet packages with version: {{ version }}"
-    @mkdir -p {{ PACKAGES_DIR }}
-    @dotnet pack --configuration Release \
+    #!/usr/bin/env bash
+    set -euo pipefail
+    version="$(dotnet tool run minver --default-pre-release-identifiers preview)"
+    echo "Creating NuGet packages with version: $version"
+    mkdir -p {{ PACKAGES_DIR }}
+    dotnet pack --configuration Release \
         --no-build \
         --output {{ PACKAGES_DIR }} \
-        -p:Version={{ version }} \
+        -p:Version="$version" \
         -p:RepositoryUrl="https://github.com/cecilphillip/stripe-dotnet-extensions"
-    @echo ""
-    @echo "✓ Packages created:"
-    @ls -lh {{ PACKAGES_DIR }}/*.nupkg || true
+    echo ""
+    echo "✓ Packages created:"
+    ls -lh {{ PACKAGES_DIR }}/*.nupkg || true
 
 # Publish packages to NuGet.org — builds first (requires NUGET_API_KEY environment variable)
 publish-nuget: pack
@@ -251,6 +251,7 @@ ci: clean build test pack
 release-check:
     #!/usr/bin/env bash
     set -euo pipefail
+    version="$(dotnet tool run minver --default-pre-release-identifiers preview)"
 
     echo "=== 1/5 Clean ==="
     just -q clean
@@ -266,7 +267,7 @@ release-check:
     mkdir -p {{ PACKAGES_DIR }}
     dotnet pack --configuration Release --no-build \
         --output {{ PACKAGES_DIR }} \
-        -p:Version={{ version }} \
+        -p:Version="$version" \
         -p:RepositoryUrl="https://github.com/cecilphillip/stripe-dotnet-extensions"
 
     echo "=== 5/5 Working tree ==="
@@ -280,6 +281,6 @@ release-check:
     fi
 
     echo ""
-    echo "✓ release-check passed for version {{ version }}"
+    echo "✓ release-check passed for version $version"
     echo "  Packages: $(ls {{ PACKAGES_DIR }}/*.nupkg | wc -l | tr -d ' ')"
     echo "  Commit:   $(git rev-parse --short HEAD)"
