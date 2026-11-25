@@ -129,6 +129,41 @@ builder.Services.AddStripe("client1", opts =>
 
 > See [StripeOptions](src/Stripe.Extensions.DependencyInjection/StripeOptions.cs) for all the available options.
 
+Each client binds its own `Stripe:{clientName}` section; named clients do not inherit values from `Stripe:Default`.
+The delegate passed to `AddStripe` runs after configuration binding and can override those values.
+
+By default, a missing API key is reported when the client is resolved. To validate a client's
+API key when the host starts instead, opt in for each client:
+
+```csharp
+builder.Services.AddStripe().ValidateOnStart();
+builder.Services.AddStripe("client1").ValidateOnStart();
+```
+
+Validation runs after options configuration and post-configuration. It checks that the key is
+present, not that it is valid with Stripe, and makes no network request. Failures identify the
+client and its `Stripe:{clientName}:ApiKey` configuration path.
+
+`AddStripe` returns an `IStripeClientBuilder`, which is also an `IHttpClientBuilder`. Configure
+the underlying HTTP client or add a registered delegating handler using the usual extensions:
+
+```csharp
+builder.Services.AddTransient<MyDelegatingHandler>();
+builder.Services.AddStripe()
+    .ValidateOnStart()
+    .ConfigureHttpClient(client => client.Timeout = TimeSpan.FromSeconds(30))
+    .AddHttpMessageHandler<MyDelegatingHandler>();
+
+public sealed class MyDelegatingHandler : System.Net.Http.DelegatingHandler
+{
+    // Override SendAsync to add application-specific behavior.
+}
+```
+
+Stripe's SDK has its own network retry setting (`StripeOptions.MaxNetworkRetries`). If a handler
+also retries, account for combined attempts and timeouts, and avoid retrying unsafe operations
+without appropriate idempotency protection.
+
 ### Aspire event forwarding
 
 `Stripe.Hosting.Aspire` includes convenience APIs for wiring the Stripe CLI to Aspire resources during local development.
@@ -199,6 +234,36 @@ public class HomeController : Controller
 The `Stripe.Extensions.AspNetCore` package simplifies Webhook handling by automating the event parsing, signature validation and logging.
 All that's needed is to override the appropriate events of the handler class.
 
+Both endpoint styles use the same Stripe configuration; choose the mapping that matches the
+destination's event format:
+
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddStripe();
+builder.Services.AddStripeEventSubscriber<AccountProvisioningSubscriber>();
+
+var app = builder.Build();
+
+// Snapshot events (v1): deserialize a complete Event and dispatch to a handler.
+app.MapStripeWebhookHandler<MyWebhookHandler>("/stripe/webhook");
+
+// Thin events (v2): dispatch a lightweight notification to registered subscribers.
+app.MapStripeEventNotifications("/stripe/thin-events");
+```
+
+For local development, forward each event format to its matching route in one Stripe CLI session.
+Use the signing secret printed by the CLI as `Stripe:Default:WebhookSecret`:
+
+```sh
+stripe listen --thin-events '*' \
+  --forward-to localhost:5000/stripe/webhook \
+  --forward-thin-to localhost:5000/stripe/thin-events
+```
+
+These separate thin-forwarding flags are deprecated by recent Stripe CLI versions but still
+allow distinct routes for both formats in one session.
+
 ### Snapshot Events (v1)
 
 Create a handler class that inherits from [StripeWebhookHandler](./src/Stripe.Extensions.AspNetCore/StripeWebhookHandler.cs), which provides virtual methods for all known webhook events.
@@ -219,6 +284,9 @@ public class MyWebhookHandler : StripeWebhookHandler<MyWebhookHandler>
 ```
 Each handler has a single constructor that accepts an instance of [StripeWebhookContext](./src/Stripe.Extensions.AspNetCore/StripeWebhookContext.cs), which provides
 access to `StripeClient`, the configured `StripeOptions` and an instance of `ILogger`.
+The handler is created for each request, and constructor-injected services are resolved from that
+request's DI scope. Use `Context.HttpContext.RequestAborted` when passing cancellation to your own
+async work or Stripe SDK calls; no separate cancellation-token parameter is required.
 
 
 The last step is to register the webhook handler with ASP.NET Core routing by calling `MapStripeWebhookHandler`.
@@ -279,6 +347,16 @@ app.MapStripeEventNotifications("/stripe/thin-events");
 - Constructor injection works normally; subscribers are resolved per request.
 - Registering a subscriber for an event type this Stripe.net version does not know **fails at
   startup**, not on the first delivery.
+
+To inspect the registered dispatch map at startup, opt in when mapping the endpoint:
+
+```csharp
+app.MapStripeEventNotifications("/stripe/thin-events", options =>
+    options.LogSubscriberMappings = true);
+```
+
+This writes notification CLR type names and their subscriber type names (including unhandled-event
+subscribers) at information level when the endpoint is mapped. It does not log event payloads.
 
 #### Events nobody subscribed to
 
@@ -476,9 +554,8 @@ var stripeCli = builder.AddStripeCliContainer("stripe-cli",
         publishableKey: stripePublishableKey)
     .WithWebhookForwardTo(api, webhookPath: "/webhooks/stripe");
 
-// WaitFor ensures the api starts only after the signing secret is captured
-api.WithReference(stripeCli)
-   .WaitFor(stripeCli);
+// Inject credentials and wait until the signing secret is captured.
+api.WithStripeCli(stripeCli);
 
 builder.Build().Run();
 ```
@@ -494,7 +571,9 @@ var stripeCli = builder.AddStripeCli("stripe-cli",
 
 ### Injected environment variables
 
-`WithReference(stripeCli)` injects the following environment variables into the dependent service, covering both standalone usage and zero-config `services.AddStripe()`:
+`WithStripeCli(stripeCli)` injects the following environment variables and waits for
+the signing secret before starting the dependent service. `WithReference(stripeCli)` remains
+available when no startup wait is needed. Both cover standalone usage and `services.AddStripe()`:
 
 | Environment variable | Config path (`Stripe:Default:*`) | Value |
 |---|---|---|
@@ -507,7 +586,7 @@ Because the `Stripe__Default__*` variables map directly to the `Stripe:Default` 
 To target a named client (e.g. `services.AddStripe("payments")`), pass the client name:
 
 ```csharp
-api.WithReference(stripeCli, clientName: "payments");
+api.WithStripeCli(stripeCli, clientName: "payments");
 // injects Stripe__payments__ApiKey, Stripe__payments__WebhookSecret, etc.
 ```
 

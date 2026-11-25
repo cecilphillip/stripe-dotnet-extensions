@@ -15,6 +15,16 @@ namespace Stripe.Extensions.AspNetCore;
 public sealed class StripeEventNotificationOptions
 {
     /// <summary>
+    /// Gets or sets whether mapping the endpoint logs the registered notification-to-subscriber
+    /// mapping at information level.
+    /// </summary>
+    /// <remarks>
+    /// The report contains only CLR type names and is emitted when the endpoint is mapped; it
+    /// never includes request or event payload data.
+    /// </remarks>
+    public bool LogSubscriberMappings { get; set; }
+
+    /// <summary>
     /// Optional gate invoked after the notification is parsed but before any subscriber runs.
     /// Return <see langword="true"/> to dispatch and <see langword="false"/> to skip; a skipped
     /// notification still returns 202 Accepted, so Stripe does not retry it.

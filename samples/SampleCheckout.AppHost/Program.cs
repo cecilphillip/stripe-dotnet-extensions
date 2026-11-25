@@ -6,8 +6,8 @@ var builder = DistributedApplication.CreateBuilder(args);
 var stripeApiKey = builder.AddParameter("stripe-api-key", secret: true);
 var stripePublishableKey = builder.AddParameter("stripe-publishable-key", secret: false);
 
-var checkout = builder.AddProject<Projects.SampleCheckout>("checkout");
-var notifications = builder.AddProject<Projects.SampleEventNotifications>("notifications");
+var checkout = builder.AddDotnetProject("checkout", "../SampleCheckout/SampleCheckout.csproj");
+var notifications = builder.AddDotnetProject("notifications", "../SampleEventNotifications/SampleEventNotifications.csproj");
 
 // Local CLI alternative to the container below; requires `stripe` on PATH.
 // var stripeCli = builder.AddStripeCli("stripe-cli", apiKey: stripeApiKey, publishableKey: stripePublishableKey)
@@ -19,11 +19,10 @@ var stripeCli = builder.AddStripeCliContainer("stripe-cli", apiKey: stripeApiKey
     .WithWebhookForwardTo(checkout, webhookPath: "/stripe/webhook")
     .WithThinEventForwardTo(notifications, thinEventPath: "/stripe/thin-events");
 
-// WaitFor holds each app back until the signing secret has been captured from CLI output.
-checkout.WithReference(stripeCli)
-    .WaitFor(stripeCli);
+// Wait until the signing secret has been captured before starting either app.
+checkout.WithStripeCli(stripeCli)
+    .WithReference(stripeCli, clientName: "ProductsReadOnly");
 
-notifications.WithReference(stripeCli)
-    .WaitFor(stripeCli);
+notifications.WithStripeCli(stripeCli);
 
 builder.Build().Run();

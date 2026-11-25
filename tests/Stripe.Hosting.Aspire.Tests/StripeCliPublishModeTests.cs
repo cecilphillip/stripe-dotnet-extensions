@@ -69,6 +69,27 @@ public class StripeCliPublishModeTests
     [Theory]
     [InlineData(CliKind.LocalExecutable)]
     [InlineData(CliKind.Container)]
+    public async Task PublishMode_HelperRemovesWaitButPreservesSecretReference(CliKind kind)
+    {
+        var builder = DistributedApplication.CreateBuilder(["--operation", "publish"]);
+        IResourceBuilder<IStripeCliResource> stripeCli = kind == CliKind.LocalExecutable
+            ? builder.AddStripeCli("stripe-cli")
+            : builder.AddStripeCliContainer("stripe-cli");
+        var checkout = builder.AddContainer("checkout", "nginx")
+            .WithStripeCli(stripeCli, "Secondary");
+        Assert.Single(WaitAnnotationsTargeting(checkout.Resource, stripeCli.Resource));
+
+        using var app = await BuildAndRaiseBeforeStartAsync(builder);
+
+        Assert.Empty(WaitAnnotationsTargeting(checkout.Resource, stripeCli.Resource));
+        var environment = await AspireEnv.MaterializeAsync(checkout.Resource, DistributedApplicationOperation.Publish);
+        Assert.Equal("{stripe-cli.webhookSigningSecret}",
+            AspireEnv.ManifestExpressionOf(environment["Stripe__Secondary__WebhookSecret"]));
+    }
+
+    [Theory]
+    [InlineData(CliKind.LocalExecutable)]
+    [InlineData(CliKind.Container)]
     public void RunMode_PreservesWaitAnnotationsTargetingStripeCli(CliKind kind)
     {
         var builder = DistributedApplication.CreateBuilder();

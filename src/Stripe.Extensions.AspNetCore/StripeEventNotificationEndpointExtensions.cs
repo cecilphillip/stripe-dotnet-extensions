@@ -17,6 +17,8 @@ namespace Stripe.Extensions.AspNetCore;
 public static class StripeEventNotificationEndpointExtensions
 {
     private const string LoggerCategory = "Stripe.Extensions.AspNetCore.StripeEventNotifications";
+    private const string SubscriberMappingsLoggerCategory =
+        "Stripe.Extensions.AspNetCore.SubscriberMappings";
 
     // Minimal API's MapPost(IEndpointRouteBuilder, string, Delegate) is itself annotated
     // [RequiresUnreferencedCode] and [RequiresDynamicCode], so no endpoint mapped this way can be
@@ -117,9 +119,44 @@ public static class StripeEventNotificationEndpointExtensions
             .Select(entry => new Binding(StripeNotificationBinder.For(entry.NotificationType), entry.SubscriberTypes))
             .ToList();
 
+        if (options.LogSubscriberMappings)
+        {
+            LogSubscriberMappings(
+                endpoints.ServiceProvider.GetRequiredService<ILoggerFactory>(),
+                pattern,
+                bindings,
+                registry.UnhandledSubscribers);
+        }
+
         return endpoints.MapPost(
             pattern,
             CreateDelegate(namedConfiguration, options, bindings, registry.UnhandledSubscribers, verifySignature));
+    }
+
+    private static void LogSubscriberMappings(
+        ILoggerFactory loggerFactory,
+        string pattern,
+        IReadOnlyList<Binding> bindings,
+        IReadOnlyList<Type> unhandledSubscribers)
+    {
+        var logger = loggerFactory.CreateLogger(SubscriberMappingsLoggerCategory);
+
+        foreach (var binding in bindings)
+        {
+            logger.LogInformation(
+                "Stripe event notification endpoint {Endpoint} maps {NotificationType} to subscribers: {SubscriberTypes}",
+                pattern,
+                binding.Binder.NotificationType.FullName ?? binding.Binder.NotificationType.Name,
+                string.Join(", ", binding.SubscriberTypes.Select(type => type.FullName ?? type.Name)));
+        }
+
+        if (unhandledSubscribers.Count > 0)
+        {
+            logger.LogInformation(
+                "Stripe event notification endpoint {Endpoint} maps unhandled notifications to subscribers: {SubscriberTypes}",
+                pattern,
+                string.Join(", ", unhandledSubscribers.Select(type => type.FullName ?? type.Name)));
+        }
     }
 
     // Returns a RequestDelegate rather than a Delegate on purpose. MapPost's Delegate overload
@@ -150,12 +187,12 @@ public static class StripeEventNotificationEndpointExtensions
             string signatureHeader = string.Empty;
             if (verifySignature)
             {
-                if (string.IsNullOrEmpty(stripeOptions.WebhookSecret))
+                if (string.IsNullOrWhiteSpace(stripeOptions.WebhookSecret))
                 {
                     var missingSecret = new InvalidOperationException(
-                        "WebhookSecret is required to validate events. " +
-                        "You can set it using the Stripe:WebhookSecret configuration section or " +
-                        "by passing the value to .AddStripe(o => o.WebhookSecret = \"your_secret\") call");
+                        "WebhookSecret is required to validate events and cannot be empty or whitespace. " +
+                        $"Set Stripe:{namedConfiguration}:WebhookSecret or configure WebhookSecret " +
+                        "in the corresponding AddStripe call.");
                     logger.WebhookSecretValidationFailed(missingSecret);
                     result.Exception = missingSecret;
                     await Results.BadRequest().ExecuteAsync(http).ConfigureAwait(false);

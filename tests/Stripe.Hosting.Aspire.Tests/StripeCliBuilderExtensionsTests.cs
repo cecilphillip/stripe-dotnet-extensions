@@ -1,6 +1,8 @@
 using Aspire.Hosting;
 using Aspire.Hosting.ApplicationModel;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace Stripe.Hosting.Aspire.Tests;
@@ -462,5 +464,117 @@ public class StripeCliBuilderExtensionsTests
         var api = builder.AddContainer("api", "myimage");
 
         Assert.Throws<ArgumentException>(() => api.WithReference(stripe, clientName: ""));
+    }
+
+    [Theory]
+    [InlineData(false, "Default")]
+    [InlineData(true, "Secondary")]
+    public async Task WithStripeCli_InjectsCredentialsAndWaitsForSigningSecret(
+        bool container, string clientName)
+    {
+        var builder = DistributedApplication.CreateBuilder();
+        var apiKey = builder.AddParameter("key", "sk_test_123");
+        var publishableKey = builder.AddParameter("public", "pk_test_123");
+        IResourceBuilder<IStripeCliResource> stripe = container
+            ? builder.AddStripeCliContainer("stripe", apiKey, publishableKey)
+            : builder.AddStripeCli("stripe", apiKey, publishableKey);
+        var destination = builder.AddContainer("api", "myimage");
+
+        var result = destination.WithStripeCli(stripe, clientName);
+
+        Assert.Same(destination, result);
+        var wait = Assert.Single(destination.Resource.Annotations.OfType<WaitAnnotation>());
+        Assert.Same(stripe.Resource, wait.Resource);
+        Assert.Equal(WaitType.WaitUntilHealthy, wait.WaitType);
+        Assert.Single(stripe.Resource.Annotations.OfType<HealthCheckAnnotation>());
+
+        using var app = builder.Build();
+        var registrations = app.Services.GetRequiredService<IOptions<HealthCheckServiceOptions>>().Value.Registrations;
+        var registration = Assert.Single(registrations, r => r.Name == "stripe.cli.webhook-secret.stripe");
+        var check = registration.Factory(app.Services);
+        var healthContext = new HealthCheckContext { Registration = registration };
+        Assert.Equal(HealthStatus.Unhealthy, (await check.CheckHealthAsync(healthContext)).Status);
+
+        var environment = await AspireEnv.MaterializeAsync(destination.Resource);
+        Assert.Equal("sk_test_123", await AspireEnv.ResolveAsync(environment["STRIPE_SECRET_KEY"]));
+        Assert.Equal("pk_test_123", await AspireEnv.ResolveAsync(environment["STRIPE_PUBLISHABLE_KEY"]));
+        Assert.Equal("sk_test_123", await AspireEnv.ResolveAsync(environment[$"Stripe__{clientName}__ApiKey"]));
+        Assert.Equal("pk_test_123", await AspireEnv.ResolveAsync(environment[$"Stripe__{clientName}__PublicKey"]));
+        Assert.Equal(string.Empty, await AspireEnv.ResolveAsync(environment["STRIPE_WEBHOOK_SECRET"]));
+        stripe.Resource.SetWebhookSigningSecret("whsec_captured");
+        Assert.Equal(HealthStatus.Healthy, (await check.CheckHealthAsync(healthContext)).Status);
+        Assert.Equal("whsec_captured", await AspireEnv.ResolveAsync(environment["STRIPE_WEBHOOK_SECRET"]));
+        Assert.Equal("whsec_captured", await AspireEnv.ResolveAsync(environment[$"Stripe__{clientName}__WebhookSecret"]));
+    }
+
+    [Fact]
+    public void WithStripeCli_ReusesForwardingSecretResolver()
+    {
+        var builder = DistributedApplication.CreateBuilder();
+        var target = builder.AddContainer("target", "myimage").WithHttpEndpoint(port: 5082);
+        var stripe = builder.AddStripeCli("stripe").WithWebhookForwardTo(target);
+
+        builder.AddContainer("api", "myimage").WithStripeCli(stripe);
+
+        Assert.Single(stripe.Resource.Annotations.OfType<HealthCheckAnnotation>());
+    }
+
+    [Fact]
+    public void WithStripeCli_InvalidArgumentsThrowBeforeAddingAnnotations()
+    {
+        var builder = DistributedApplication.CreateBuilder();
+        var stripe = builder.AddStripeCli("stripe");
+        var api = builder.AddContainer("api", "myimage");
+        IResourceBuilder<ContainerResource> nullApi = null!;
+
+        Assert.Throws<ArgumentNullException>(() => nullApi.WithStripeCli(stripe));
+        Assert.Throws<ArgumentNullException>(() =>
+            api.WithStripeCli((IResourceBuilder<StripeCliResource>)null!));
+        Assert.Throws<ArgumentException>(() => api.WithStripeCli(stripe, ""));
+        Assert.Empty(stripe.Resource.Annotations.OfType<HealthCheckAnnotation>());
+        Assert.Empty(api.Resource.Annotations.OfType<WaitAnnotation>());
+    }
+
+    [Theory]
+    [InlineData("snapshot", false)]
+    [InlineData("connect", false)]
+    [InlineData("thin", false)]
+    [InlineData("snapshot", true)]
+    [InlineData("connect", true)]
+    [InlineData("thin", true)]
+    public async Task ForwardingTargetErrorsIdentifyProblemAndRemedy(string forwarding, bool unallocated)
+    {
+        var builder = DistributedApplication.CreateBuilder();
+        var target = builder.AddContainer("api", "myimage");
+        if (unallocated)
+        {
+            target.WithHttpEndpoint(port: 5082);
+        }
+
+        var stripe = builder.AddStripeCli("stripe");
+        switch (forwarding)
+        {
+            case "snapshot":
+                stripe.WithWebhookForwardTo(target);
+                break;
+            case "connect":
+                stripe.WithWebhookConnectForwardTo(target);
+                break;
+            case "thin":
+                stripe.WithThinEventForwardTo(target);
+                break;
+        }
+
+#pragma warning disable CS0618 // The replacement API requires an execution context available at runtime.
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            async () => await stripe.Resource.GetArgumentValuesAsync());
+#pragma warning restore CS0618
+
+        var expected = unallocated
+            ? "Stripe CLI resource 'stripe' cannot forward to 'api': endpoint 'http' has not been allocated. " +
+              "Aspire allocates endpoints during AppHost startup; check the AppHost logs for endpoint allocation errors."
+            : "Stripe CLI resource 'stripe' cannot forward to 'api': the target has no endpoints. " +
+              "Add an HTTP or HTTPS endpoint to the target, for example with WithHttpEndpoint(...).";
+        Assert.Equal(expected, exception.Message);
     }
 }

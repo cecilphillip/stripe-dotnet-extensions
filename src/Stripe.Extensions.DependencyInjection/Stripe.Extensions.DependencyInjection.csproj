@@ -3,6 +3,9 @@
   <PropertyGroup>
     <OutputType>Library</OutputType>
     <TargetFrameworks>netstandard2.1;net8.0;net9.0;net10.0</TargetFrameworks>
+    <!-- Extensions 11 no longer supports .NET 8/9 consumers. -->
+    <ExtensionsPackageVersion>10.0.15</ExtensionsPackageVersion>
+    <ExtensionsPackageVersion Condition="'$(TargetFramework)' == 'net10.0'">11.0.0</ExtensionsPackageVersion>
     <!--
       IsAotCompatible is deliberately NOT set: it is a package-level promise that cannot be
       honoured end to end, because Stripe.net deserializes with reflection.
@@ -27,13 +30,13 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Stripe.net" Version="52.4.2" />
-    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.12" />
-    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.12" />
-    <PackageReference Include="Microsoft.Extensions.Configuration" Version="10.0.12" />
-    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.12" />
-    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.12" />
-    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.12" />
+    <PackageReference Include="Stripe.net" Version="53.2.0" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="$(ExtensionsPackageVersion)" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="$(ExtensionsPackageVersion)" />
+    <PackageReference Include="Microsoft.Extensions.Configuration" Version="$(ExtensionsPackageVersion)" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="$(ExtensionsPackageVersion)" />
+    <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="$(ExtensionsPackageVersion)" />
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="$(ExtensionsPackageVersion)" />
   </ItemGroup>
 
 </Project>

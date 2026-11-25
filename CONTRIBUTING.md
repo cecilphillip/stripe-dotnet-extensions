@@ -65,6 +65,19 @@ dotnet pack
 
 ## Testing
 
+### Dependency upgrades
+
+Run `dotnet outdated --pre-release Never` and use `aspire update` for the sample AppHost.
+Keep the generator's Roslyn references aligned with the compiler selected by `global.json`
+(currently Roslyn 5.3), and its `System.Text.Json` dependency on 10.x. Newer packages can
+compile the generator itself but fail when the .NET 10 compiler loads it. Keep the generator
+test host's Workspaces reference aligned with the generator's Roslyn version.
+
+The .NET 10 library targets use Extensions 11 and Aspire 17. Older targets retain Extensions
+10 and Aspire 13.6 because the newer packages no longer support .NET 8/9.
+After upgrading, build the full solution with `-warnaserror`, run all tests, and run the
+sample AppHost; generator tests alone do not prove compiler-host compatibility.
+
 ### Run all tests
 ```bash
 just test

@@ -53,54 +53,6 @@ public static class StripeAppBuilderExtensions
         return endpointRouteBuilder;
     }
 
-    /// <summary>
-    /// Maps a thin event webhook handler to the specified route pattern.
-    /// </summary>
-    /// <typeparam name="T">The thin event handler type.</typeparam>
-    /// <param name="endpointRouteBuilder">The endpoint route builder.</param>
-    /// <param name="pattern">The route pattern. Defaults to "/stripe/thin-event".</param>
-    /// <returns>The endpoint route builder for chaining.</returns>
-    [Obsolete("Use MapStripeEventNotifications with IStripeEventSubscriber<TNotification> instead. " +
-              "See the 'Event subscribers (v2 thin events)' section of the README.")]
-    public static IEndpointRouteBuilder MapStripeThinEventHandler<
-        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] T>(
-        this IEndpointRouteBuilder endpointRouteBuilder,
-        string pattern = "/stripe/thin-event")
-        where T : StripeThinEventHandler<T>
-    {
-        ArgumentNullException.ThrowIfNull(pattern);
-
-        return endpointRouteBuilder.MapStripeThinEventHandler<T>(pattern,
-            StripeOptions.DefaultClientConfigurationSectionName);
-    }
-
-    /// <summary>
-    /// Maps a thin event webhook handler to the specified route pattern with a named configuration.
-    /// </summary>
-    /// <typeparam name="T">The thin event handler type.</typeparam>
-    /// <param name="endpointRouteBuilder">The endpoint route builder.</param>
-    /// <param name="pattern">The route pattern.</param>
-    /// <param name="namedConfiguration">The named Stripe configuration to use.</param>
-    /// <returns>The endpoint route builder for chaining.</returns>
-    [Obsolete("Use MapStripeEventNotifications with IStripeEventSubscriber<TNotification> instead. " +
-              "See the 'Event subscribers (v2 thin events)' section of the README.")]
-    public static IEndpointRouteBuilder MapStripeThinEventHandler<
-        [DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors)] T>(
-        this IEndpointRouteBuilder endpointRouteBuilder,
-        string pattern, string namedConfiguration)
-        where T : StripeThinEventHandler<T>
-    {
-        ArgumentNullException.ThrowIfNull(pattern);
-        ArgumentNullException.ThrowIfNull(namedConfiguration);
-        StripeSerializationGuard.EnsureReflectionSerializationEnabled();
-
-        var handlerFactory = ActivatorUtilities.CreateFactory(typeof(T), [typeof(StripeWebhookContext)]);
-        var requestDelegate = CreateWebhookDelegate<T>(namedConfiguration, handlerFactory);
-        endpointRouteBuilder.MapPost(pattern, requestDelegate);
-
-        return endpointRouteBuilder;
-    }
-
     private static RequestDelegate CreateWebhookDelegate<T>(
         string namedConfiguration,
         ObjectFactory handlerFactory)

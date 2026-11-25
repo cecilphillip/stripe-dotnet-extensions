@@ -15,12 +15,12 @@ public abstract class StripeWebhookHandlerBase<T>(StripeWebhookContext context) 
         try
         {
             var options = Context.StripeOptions;
-            if (string.IsNullOrEmpty(options.WebhookSecret))
+            if (string.IsNullOrWhiteSpace(options.WebhookSecret))
             {
                 var ex = new InvalidOperationException(
-                    "WebhookSecret is required to validate events. " +
-                    "You can set it using Stripe:WebhookSecret configuration section or " +
-                    "by passing the value to .AddStripe(o => o.WebhookSecret = \"your_secret\") call");
+                    "WebhookSecret is required to validate events and cannot be empty or whitespace. " +
+                    "Set Stripe:Default:WebhookSecret (or Stripe:<clientName>:WebhookSecret for a named client) " +
+                    "or configure WebhookSecret in the corresponding AddStripe call.");
                 Logger.WebhookSecretValidationFailed(ex);
                 throw ex;
             }

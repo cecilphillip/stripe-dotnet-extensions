@@ -468,6 +468,36 @@ public static class StripeCliBuilderExtensions
         });
     }
 
+    /// <summary>
+    /// Injects Stripe credentials and waits for the CLI's webhook signing secret before starting
+    /// the destination resource.
+    /// </summary>
+    /// <remarks>
+    /// Configure webhook forwarding on the Stripe CLI so it delivers events to an endpoint.
+    /// The wait is removed during publishing because the CLI is a local development resource.
+    /// </remarks>
+    /// <typeparam name="TDestination">The destination resource type.</typeparam>
+    /// <typeparam name="TStripe">The Stripe CLI resource type.</typeparam>
+    /// <param name="builder">The destination resource builder.</param>
+    /// <param name="source">The Stripe CLI resource to reference and wait for.</param>
+    /// <param name="clientName">The Stripe configuration section name; defaults to <c>Default</c>.</param>
+    /// <returns>The destination resource builder.</returns>
+    [AspireExport("withStripeCli", Description = "Injects Stripe credentials and waits for the webhook signing secret")]
+    public static IResourceBuilder<TDestination> WithStripeCli<TDestination, TStripe>(
+        this IResourceBuilder<TDestination> builder,
+        IResourceBuilder<TStripe> source,
+        string clientName = DefaultClientName)
+        where TDestination : IResourceWithEnvironment, IResourceWithWaitSupport
+        where TStripe : class, IResource, IStripeCliResource
+    {
+        ArgumentNullException.ThrowIfNull(builder);
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentException.ThrowIfNullOrEmpty(clientName);
+
+        source.EnsureWebhookSigningSecretResolver();
+        return builder.WithReference(source, clientName).WaitFor(source);
+    }
+
     private static void AppendListenOptions<T>(
         IResourceBuilder<T> builder,
         IEnumerable<string>? events,
@@ -556,14 +586,17 @@ public static class StripeCliBuilderExtensions
         if (!targetResource.TryGetEndpoints(out var endpoints) || !endpoints.Any())
         {
             throw new InvalidOperationException(
-                $"The resource '{targetResource.Name}' does not have any endpoints defined. " +
-                "Ensure the resource has at least one endpoint configured before calling WithWebhookForwardTo.");
+                $"Stripe CLI resource '{stripeResource.Name}' cannot forward to '{targetResource.Name}': " +
+                "the target has no endpoints. Add an HTTP or HTTPS endpoint to the target, " +
+                "for example with WithHttpEndpoint(...).");
         }
 
-        var allocatedEndpoint = endpoints.First().AllocatedEndpoint
+        var endpoint = endpoints.First();
+        var allocatedEndpoint = endpoint.AllocatedEndpoint
             ?? throw new InvalidOperationException(
-                $"The endpoint for resource '{targetResource.Name}' has not been allocated yet. " +
-                "Endpoint allocation occurs when the Aspire application host starts.");
+                $"Stripe CLI resource '{stripeResource.Name}' cannot forward to '{targetResource.Name}': " +
+                $"endpoint '{endpoint.Name}' has not been allocated. Aspire allocates endpoints during " +
+                "AppHost startup; check the AppHost logs for endpoint allocation errors.");
 
         var path = webhookPath.StartsWith('/') ? webhookPath : $"/{webhookPath}";
 

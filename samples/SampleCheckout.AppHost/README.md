@@ -29,11 +29,15 @@ dotnet user-secrets set "Parameters:stripe-publishable-key" "pk_test_..."
 ## Running
 
 ```bash
-dotnet run
+aspire start --apphost SampleCheckout.AppHost.csproj
 ```
 
-The Stripe CLI starts in webhook-forwarding mode and prints a signing secret. `WaitFor(stripeCli)`
-holds the web apps back until that secret has been captured, so it is never empty on first start.
+The AppHost uses Aspire 17's `AddDotnetProject` API to build and launch both apps by project path.
+Stop it with `aspire stop --apphost SampleCheckout.AppHost.csproj`.
+
+The Stripe CLI starts in webhook-forwarding mode and prints a signing secret.
+`WithStripeCli(stripeCli)` injects the credentials and holds the web apps back until
+that secret has been captured, so it is never empty on first start.
 
 ## Local CLI instead of the container
 
@@ -58,7 +62,8 @@ macOS and Windows that hostname already routes to the host.
 | `Stripe__Default__WebhookSecret` | Binds to `Stripe:Default:WebhookSecret` |
 
 The `Stripe__Default__*` set is what `AddStripe()` binds, so the sample apps need no further
-configuration. Pass `clientName: "Secondary"` to target a named client registered with
+configuration. Checkout also references the CLI with `clientName: "ProductsReadOnly"` to configure
+its keyed product-listing client. Pass `clientName: "Secondary"` to target a named client registered with
 `AddStripe("Secondary")`.
 
 ## Snapshot vs. thin events

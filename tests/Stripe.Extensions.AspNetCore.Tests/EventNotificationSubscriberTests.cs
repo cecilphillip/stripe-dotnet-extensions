@@ -198,6 +198,53 @@ public class EventNotificationSubscriberTests
     }
 
     [Fact]
+    public void LogsSubscriberMappingOnlyWhenOptedIn()
+    {
+        var logger = A.Fake<ILogger>();
+        A.CallTo(() => logger.IsEnabled(A<LogLevel>._)).Returns(true);
+
+        using var app = BuildApp(services =>
+        {
+            services.AddStripeEventSubscriber<PingSubscriberA>();
+            services.AddStripeEventSubscriber<UnhandledSubscriber>();
+        }, logger: logger, configureEndpoint: options => options.LogSubscriberMappings = true);
+
+        var mappingLogs = Fake.GetCalls(logger)
+            .Where(call => call.Method.Name == "Log"
+                           && call.GetArgument<LogLevel>(0) == LogLevel.Information
+                           && call.GetArgument<object>(2)?.ToString()?.Contains(
+                               "Stripe event notification endpoint", StringComparison.Ordinal) == true)
+            .Select(call => call.GetArgument<object>(2)!.ToString()!)
+            .ToArray();
+
+        Assert.Equal(2, mappingLogs.Length);
+        Assert.Contains(mappingLogs, message =>
+            message.Contains(nameof(PingSubscriberA), StringComparison.Ordinal)
+            && message.Contains("V2CoreEventDestinationPingEventNotification", StringComparison.Ordinal));
+        Assert.Contains(mappingLogs, message =>
+            message.Contains("unhandled notifications", StringComparison.Ordinal)
+            && message.Contains(nameof(UnhandledSubscriber), StringComparison.Ordinal));
+        Assert.DoesNotContain(mappingLogs, message => message.Contains("evt_123", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void DoesNotLogSubscriberMappingByDefault()
+    {
+        var logger = A.Fake<ILogger>();
+        A.CallTo(() => logger.IsEnabled(A<LogLevel>._)).Returns(true);
+
+        using var app = BuildApp(
+            services => services.AddStripeEventSubscriber<PingSubscriberA>(),
+            logger: logger);
+
+        Assert.DoesNotContain(Fake.GetCalls(logger), call =>
+            call.Method.Name == "Log"
+            && call.GetArgument<LogLevel>(0) == LogLevel.Information
+            && call.GetArgument<object>(2)?.ToString()?.Contains(
+                "Stripe event notification endpoint", StringComparison.Ordinal) == true);
+    }
+
+    [Fact]
     public async Task PreservesEverySubscriberFailureAndReturns500()
     {
         var logger = A.Fake<ILogger>();
@@ -308,6 +355,36 @@ public class EventNotificationSubscriberTests
         var response = await client.PostAsync(Path, BuildPayload());
 
         Assert.False(response.IsSuccessStatusCode);
+        A.CallTo(logger).Where(l => l.Method.Name == "Log"
+                                    && l.GetArgument<EventId>(1) ==
+                                    StripeWebhookHandlerLogger.WebhookSecretValidationFailedId
+                                    && l.GetArgument<Exception>(3)!.Message.Contains("Stripe:Default:WebhookSecret"))
+            .MustHaveHappened();
+
+        await app.StopAsync();
+    }
+
+    [Fact]
+    public async Task RejectsWhitespaceOnlyWebhookSecret()
+    {
+        var logger = A.Fake<ILogger>();
+        A.CallTo(() => logger.IsEnabled(A<LogLevel>._)).Returns(true);
+
+        await using var app = BuildApp(
+            services => services.AddStripeEventSubscriber<PingSubscriberA>(),
+            configureOptions: o =>
+            {
+                o.ApiKey = Secret;
+                o.WebhookSecret = " \t\r\n";
+            },
+            logger: logger);
+
+        await app.StartAsync();
+        using var client = app.GetTestClient();
+
+        var response = await client.PostAsync(Path, BuildPayload());
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
         A.CallTo(logger).Where(l => l.Method.Name == "Log"
                                     && l.GetArgument<EventId>(1) ==
                                     StripeWebhookHandlerLogger.WebhookSecretValidationFailedId)

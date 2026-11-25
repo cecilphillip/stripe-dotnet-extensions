@@ -173,16 +173,15 @@ The `.github/workflows/build.yml` workflow:
 ### ASP.NET Core Helpers (`Stripe.Extensions.AspNetCore`)
 - Simplifies Stripe webhook handling in ASP.NET Core
 - **v1 snapshot events**: `StripeWebhookHandler<T>` (uses `EventUtility.ConstructEvent` for signature verification), registered with `MapStripeWebhookHandler<T>` (default path: `/stripe/webhook`). Supports an optional `namedConfiguration` parameter to use a non-default named client
-- **v2 thin events**: DI-registered subscribers implementing `IStripeEventSubscriber<TNotification>`, registered with `AddStripeEventSubscriber<T>()` and mapped with `MapStripeEventNotifications`. Built on the Stripe.net SDK's own `StripeEventNotificationHandler`
-- **`StripeThinEventHandler<T>` / `MapStripeThinEventHandler<T>` are `[Obsolete]`** — superseded by the subscriber model. Do not use in new code or docs; they cover 20 event types where subscribers cover 24
+- **v2 event notifications**: DI-registered subscribers implementing `IStripeEventSubscriber<TNotification>`, registered with `AddStripeEventSubscriber<T>()` and mapped with `MapStripeEventNotifications`. Built on the Stripe.net SDK's own `StripeEventNotificationHandler`
 - **`StripeWebhookContext`**: injected into handlers, provides `HttpContext`, `StripeOptions`, `StripeClient`, and `ILoggerFactory`
-- **`IStripeWebhookExecutor`**: internal interface; both handler bases implement it for route dispatch
+- **`IStripeWebhookExecutor`**: internal interface used by the v1 handler base for route dispatch
 - Automatic webhook signature verification using `StripeOptions.WebhookSecret`
 - Validates incoming webhook requests before processing; returns `400 Bad Request` on signature errors, `500` on handler exceptions
 
 ### Source Generators (`Stripe.Extensions.AspNetCore.SourceGenerators`)
 - Generates type-safe webhook handler base classes from OpenAPI spec
-- Contains two generators: `StripeWebhookHandlerGenerator` (v1 events) and `StripeThinEventHandlerGenerator` (v2 thin events)
+- Contains `StripeWebhookHandlerGenerator` for v1 snapshot events
 - Automatically fetches latest Stripe API schema (OpenAPI 3.0 format)
 - Generates handler method stubs for all Stripe event types
 - Improves developer experience with IntelliSense and type safety
@@ -245,7 +244,7 @@ The `.github/workflows/build.yml` workflow:
 
 **Webhook Handlers**:
 - For **v1 events**: inherit from `StripeWebhookHandler<T>`, register with `MapStripeWebhookHandler<T>("/path")`
-- For **v2 thin events**: implement `IStripeEventSubscriber<TNotification>`, register with `AddStripeEventSubscriber<T>()`, and map once with `MapStripeEventNotifications("/path")`
+- For **v2 event notifications**: implement `IStripeEventSubscriber<TNotification>`, register with `AddStripeEventSubscriber<T>()`, and map once with `MapStripeEventNotifications("/path")`
 - For v1 handlers, override specific `On*Async` methods (e.g., `OnCustomerCreatedAsync`) instead of a generic handle method
 - Override `UnknownEventAsync` to handle events not covered by generated overrides
 - Dependencies injected via constructor DI (in addition to the required `StripeWebhookContext` parameter)
@@ -255,10 +254,9 @@ The `.github/workflows/build.yml` workflow:
 - `WebhookSecret` must be set in `StripeOptions` — throws `InvalidOperationException` at request time if missing
 
 **Partial Classes & Source Generators**:
-- `StripeWebhookHandler<T>` and the obsolete `StripeThinEventHandler<T>` are declared `partial` — the source generator contributes `ExecuteAsync` and all `On*Async` method stubs
-- **User-defined handler classes do NOT need to be partial** — only the base classes are partial
+- `StripeWebhookHandler<T>` is declared `partial` — the source generator contributes `ExecuteAsync` and all `On*Async` method stubs
+- **User-defined handler classes do NOT need to be partial** — only `StripeWebhookHandler<T>` is partial
 - Generated method naming: dot/underscore-separated event names are title-cased and wrapped: `payment_intent.created` → `OnPaymentIntentCreatedAsync`
-- Thin event bracket notation: `[requirements]` → `IncludingRequirements`, e.g. `v2.core.account[requirements].updated` → `OnV2CoreAccountIncludingRequirementsUpdatedAsync`
 
 **Namespaces**:
 - DI extension methods live in `Microsoft.Extensions.DependencyInjection` namespace (not the library's own namespace) — enables auto-discovery without extra `using`

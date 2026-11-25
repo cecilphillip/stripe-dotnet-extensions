@@ -89,7 +89,37 @@ public class WebhookHandlerTests
         Assert.False(resp.IsSuccessStatusCode);
         A.CallTo(logger).Where(l => l.Method.Name == "Log"
                                     && l.GetArgument<LogLevel>(0) == LogLevel.Error
-                                    && l.GetArgument<EventId>(1) == StripeWebhookHandlerLogger.WebhookSecretValidationFailedId).MustHaveHappened();
+                                    && l.GetArgument<EventId>(1) == StripeWebhookHandlerLogger.WebhookSecretValidationFailedId
+                                    && l.GetArgument<Exception>(3)!.Message.Contains("Stripe:Default:WebhookSecret"))
+            .MustHaveHappened();
+
+        await app.StopAsync();
+    }
+
+    [Fact]
+    public async Task RejectsWhitespaceOnlyWebhookSecret()
+    {
+        var logger = A.Fake<ILogger>();
+        A.CallTo(() => logger.IsEnabled(A<LogLevel>._)).Returns(true);
+        var invocations = new List<Event>();
+
+        await using var app = BuildWebApplication(invocations, configureOptions: opts =>
+        {
+            opts.ApiKey = Secret;
+            opts.WebhookSecret = " \t\r\n";
+        }, logger);
+
+        await app.StartAsync();
+        using var httpClient = app.GetTestClient();
+
+        var response = await httpClient.PostAsync(WebhookPath, BuildPayload());
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        Assert.Empty(invocations);
+        A.CallTo(logger).Where(l => l.Method.Name == "Log"
+                                    && l.GetArgument<LogLevel>(0) == LogLevel.Error
+                                    && l.GetArgument<EventId>(1) == StripeWebhookHandlerLogger.WebhookSecretValidationFailedId)
+            .MustHaveHappened();
 
         await app.StopAsync();
     }
