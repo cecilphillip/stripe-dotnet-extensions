@@ -37,7 +37,7 @@ jobs:
     strategy:
       matrix:
         os: [ ubuntu-latest, macOS-latest ]
-        dotnet-version: [ '10.0.x' ]
+        dotnet-version: [ '11.0.x' ]
 
     runs-on: ${{ matrix.os }}
 
@@ -48,7 +48,9 @@ jobs:
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: '10.0.x' 
+        dotnet-version: |
+          10.0.x
+          11.0.x
         dotnet-quality: 'ga'
 
     - name: Restore .NET local tools
@@ -77,7 +79,9 @@ jobs:
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: '10.0.x'
+        dotnet-version: |
+          10.0.x
+          11.0.x
         dotnet-quality: 'ga'
 
     - name: Restore .NET local tools
@@ -112,7 +116,9 @@ jobs:
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: '10.0.x'
+        dotnet-version: |
+          10.0.x
+          11.0.x
         dotnet-quality: 'ga'
 
     - name: Restore .NET local tools
