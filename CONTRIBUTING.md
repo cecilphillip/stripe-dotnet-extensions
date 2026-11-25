@@ -29,7 +29,7 @@ just --version
 
 ### Install git hooks
 ```bash
-just install-hooks
+git config core.hooksPath .githooks
 ```
 
 Points `core.hooksPath` at the tracked `.githooks` directory. The `pre-push` hook runs

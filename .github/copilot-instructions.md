@@ -46,14 +46,11 @@ This project uses [Just](https://just.systems/) for build automation. Run `just`
 
 **Build & Clean**:
 - `just build` - Build solution in Release configuration
-- `just build-debug` - Build in Debug configuration
-- `just compile` - Alias for `just build`
+- `just build Debug` - Build in Debug configuration
 - `just clean` - Remove all build artifacts (`bin/`, `obj/`, `artifacts/`)
-- `just restore` - Restore NuGet packages
 
 **Testing**:
 - `just test` - Run all unit tests (Release configuration)
-- `just verify` - Alias for `just test`
 - `just test-filter "<filter>"` - Run tests matching filter (e.g., `just test-filter "FullyQualifiedName~ServiceCollectionExtensionsTest"`)
 - `just test-coverage` - Run tests with code coverage metrics
 
@@ -61,15 +58,12 @@ This project uses [Just](https://just.systems/) for build automation. Run `just`
 - `just pack` - Create NuGet packages (.nupkg and .snupkg symbol packages)
 - `just publish-nuget` - Pack then publish packages to NuGet.org (requires `NUGET_API_KEY` environment variable)
 - `just push-nuget` - Push already-built packages to NuGet.org without packing (requires `NUGET_API_KEY`)
-- `just publish-github` - Pack then publish packages to GitHub Package Registry (requires `NUGET_GITHUB_TOKEN` environment variable)
-- `just push-github` - Push already-built packages to GitHub without packing (requires `NUGET_GITHUB_TOKEN`)
 
 **OpenAPI Source Generator**:
-- `just fetch-openapi-with-validation` - Download latest Stripe OpenAPI spec with validation (requires `jq`)
 - `just fetch-openapi` - Download latest Stripe OpenAPI spec without validation
+- `just fetch-openapi true` - Download latest Stripe OpenAPI spec with validation (requires `jq`)
 
 **Pipeline Shortcuts**:
-- `just validate` - Build and run tests
 - `just ci` - Full CI pipeline: clean → build → test → pack
 - `just info` - Display build information and metadata
 
@@ -126,7 +120,7 @@ just test-coverage     # With code coverage
 
 **Publishing**:
 - **NuGet.org**: `just publish-nuget` (requires `NUGET_API_KEY` environment variable)
-- **GitHub Registry**: `just publish-github` (requires `NUGET_GITHUB_TOKEN` environment variable)
+- **GitHub Registry**: use the GitHub Actions publish workflow
 
 ## Build Configuration
 

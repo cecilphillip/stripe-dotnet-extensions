@@ -6,7 +6,7 @@
 # published package follow from it. Version 0.6.4 was tagged and published from a state
 # nobody had verified end to end. This makes that verification automatic.
 #
-# Install with `just install-hooks`. Bypass with `git push --no-verify` if you must.
+# Install with `git config core.hooksPath .githooks`. Bypass with `git push --no-verify` if you must.
 
 set -euo pipefail
 

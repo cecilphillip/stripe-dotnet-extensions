@@ -15,7 +15,7 @@
 Install the hook once per clone:
 
 ```bash
-just install-hooks
+git config core.hooksPath .githooks
 ```
 
 Everything else below is procedure, not enforcement. Follow it.
